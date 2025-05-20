@@ -1,6 +1,6 @@
 
 import { Assets, Application, Sprite, Texture, Container } from 'pixi.js'
-import { Cave } from './map.js'
+import { Cave, toCoords } from './map.js'
 
 const app = new Application();
 
@@ -17,7 +17,14 @@ async function preload()
 {
     // Create an array of asset data to load.
     const assets = [
-        { alias: 'empty-tile', src: '/EmptyTile.png' },
+        { alias: 'empty', src: '/EmptyTile.png' },
+        { alias: 'wall', src: '/CaveWall.png'},
+        { alias: 'Sandstone', src: '/SandTile.png'},
+        { alias: 'Malachite', src: '/MalachiteTile.png'},
+        { alias: 'Magnetite', src: '/MagnetiteTile.png'},
+        { alias: 'Perotene', src: '/PeroteneTile.png'},
+        { alias: 'Ilmenite', src: '/IlmeniteTile.png'},
+        { alias: 'Cochinium', src: '/CochiniumTile.png'}
     ];
 
     // Load the assets defined above.
@@ -40,9 +47,10 @@ async function preload()
 
 
     for (let i = 0; i < allCoords.length; i++) {
-        let myTile = Sprite.from('empty-tile')
+        let myAsset = cave.getTile(allCoords[i]).getBase()
+        let myTile = Sprite.from(myAsset)
         myTile.anchor.set(0)
-        let myCoords = Cave.toCoords(allCoords[i])
+        let myCoords = toCoords(allCoords[i])
 
         myTile.x = midx + (myCoords.x * 80)
         myTile.y = midy + (myCoords.y * 80)
@@ -67,7 +75,7 @@ async function preload()
         }
         if (event.deltaY > 0) {
             if (currentScale < 2.5) {
-                currentScale = currentScale * (1 + (1/3))
+                currentScale = currentScale * (4 / 3)
             } else {
                 return
             }

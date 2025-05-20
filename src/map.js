@@ -1,76 +1,20 @@
 
+import {Graph, Tile } from './graph-data.js'
+import { Ore } from './ores.js'
+
 const degradeMult = 12
 const holeLimit = 10
 const degradeLimit = 3
 const degradeDeviation = 0.7
 const cavernCount = 100
 const radius = 20
-
-//these params seem perfect
-//radius 15-50
-
+const oreMult = 300
+const oreDist = 10
 
 
-class Tile {
-    constructor(value,holding={base: 'empty'}) {
-        this.value = value;
-        this.holding = holding;
-        this.adjacent = new Set();
-    }
-
-
-    addNeighbor(Tile) {
-        this.adjacent.add(Tile);
-    }
-
-    removeNeighbor(Tile) {
-        this.adjacent.delete(Tile);
-    }
-
-    getNeighbors() {
-        return this.adjacent
-    }
-}
-
-class Graph {
-    constructor() {
-        this.tiles = new Map(); // value -> Tile
-    }
-
-    addTile(value) {
-        if (!this.tiles.has(value)) {
-            this.tiles.set(value, new Tile(value));
-        }
-        return this.tiles.get(value);
-    }
-
-    removeTile(value) {
-        let deleted = this.tiles.get(value)
-        if (deleted) {
-            for(let n of deleted.getNeighbors()) {
-                n.removeNeighbor(deleted)
-            }
-            this.tiles.delete(value)
-            return deleted;
-        } else {
-            return null;
-        }
-    }
-
-    addEdge(value1, value2) {
-        const v1 = this.addTile(value1);
-        const v2 = this.addTile(value2);
-        v1.addNeighbor(v2);
-        v2.addNeighbor(v1); 
-    }
-
-    getTile(value) {
-        return this.tiles.get(value);
-    }
-
-    getTiles() {
-        return [...this.tiles.values()];
-    }
+export function toCoords(coords) {
+    let [x, y] = coords.split(",").map(Number)
+    return {x: x, y: y}
 }
 
 
@@ -126,7 +70,8 @@ export class Cave extends Graph {
         myValues = shuffleArray(myValues)
         let count = 0
         for (let i = 0; i < myValues.length; i++) {
-            if (this.getTile(myValues[i]).getNeighbors().size == 4) {
+            let myCoords = toCoords(myValues[i])
+            if (this.getTile(myValues[i]).getNeighbors().size == 4 && !isInCircle(myCoords.x,myCoords.y,0,0,radius/2)) {
                 this.removeTile(myValues[i])
                 count++
             }
@@ -147,6 +92,32 @@ export class Cave extends Graph {
                 this.removeTile(myValues[i])
             }
         }
+
+        //add cave walls
+        myValues = [...this.tiles.keys()]
+        for (let i = 0; i < myValues.length; i++) {
+            if (this.getTile(myValues[i]).getNeighbors().size < 4) {
+                this.getTile(myValues[i]).setBase('wall')
+            }
+        }
+        
+        //bit of cleanup for walls
+        myValues = [...this.tiles.keys()]
+        for (let i = 0; i < myValues.length; i++) {
+            if (this.getTile(myValues[i]).getBase() == 'wall') {
+                let willDelete = true
+                for (let n of this.getTile(myValues[i]).getNeighbors()) {
+                    if (n.getBase() == 'empty') {
+                        willDelete = false
+                    }
+                }
+                if (willDelete) {
+                    this.removeTile(myValues[i])
+                }
+            }
+        }
+
+        this.#fillOres()
     }
 
     #degradeCave() {
@@ -157,6 +128,56 @@ export class Cave extends Graph {
             if (randNum < degradeLimit && this.getTile(myValues[i]).getNeighbors().size < 4) {
                 this.removeTile(myValues[i])
             }
+        }
+    }
+
+    #fillOres() {
+
+        //this code is stupid but guarantees player has access to sandstone easily
+        let dumbSuccess = true
+        while (dumbSuccess) {
+            let dumbX = Math.floor(Math.random() * 17) - 8
+            let dumbY = Math.floor(Math.random() * 17) - 8
+            if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
+                this.getTile(dumbX+","+dumbY).setBase('Sandstone')
+                dumbSuccess = false
+            }
+        }
+
+        let oreCount = 0;
+        for(let ore of Ore.getOres()) {
+            let count = 0
+            for (let tile of shuffleArray(this.getTiles())) {
+
+                let myLower = Math.abs(randomNormal( 3 * cavernCount * oreCount ,cavernCount * (Ore.getOres().length - oreCount)) / oreDist)
+                let myUpper = Math.abs(randomNormal( 3 * cavernCount * (oreCount + 3),2 * cavernCount * (Ore.getOres().length - oreCount)) / oreDist)
+                let myCoords = toCoords(tile.value)
+                let myVect = getDistance(myCoords.x,myCoords.y,0,0) 
+                if ( myVect > myLower && myVect < myUpper && tile.getBase() == 'empty') {
+                    tile.setBase(ore.name)
+                    let veinCount = 0
+                    let myNum = Math.random()
+                    while(myNum < 0.85 && veinCount <= 2 + (Ore.getOres().length - oreCount)) {
+                        let n = tile.getRandomNeighbor()
+                        let brokenCount = 0
+                        while (n.getBase() != 'empty' && brokenCount < 4) {
+                            n = n.getRandomNeighbor()
+                            brokenCount++
+                        }
+                        if (brokenCount < 4) {
+                            n.setBase(ore.name)
+                        }
+                        myNum = Math.random()
+                        veinCount++
+                    }
+                    count++
+                }
+                if (count >= (cavernCount / 5) + (cavernCount * radius * (Ore.getOres().length - oreCount)) / oreMult) {
+                    break
+                }
+            }
+            console.log(ore.name+" spawned "+count+" veins / "+ Math.ceil(((cavernCount / 5) + (cavernCount * radius * (Ore.getOres().length - oreCount)) / oreMult)))
+            oreCount++
         }
     }
 
@@ -177,12 +198,6 @@ export class Cave extends Graph {
         } 
     }
 
-
-    static toCoords(coords) {
-        let [x, y] = coords.split(",").map(Number)
-        return {x: x, y: y}
-    }
-
     getCoords() {
         return [...this.tiles.keys()];
     }
@@ -190,9 +205,15 @@ export class Cave extends Graph {
 }
 
 function isInCircle(x, y, cx, cy, r) {
-    const dx = x - cx;
-    const dy = y - cy;
+    let dx = x - cx;
+    let dy = y - cy;
     return (dx * dx + dy * dy) <= (r * r);
+}
+
+function getDistance(x, y, cx, cy) {
+    let dx = x - cx;
+    let dy = y - cy;
+    return Math.sqrt(dx * dx + dy * dy)
 }
 
 function randomNormal(mean, stdDev) {
