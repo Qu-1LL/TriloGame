@@ -4,6 +4,7 @@ export class Ore {
         this.name = name    //String
     }
 
+    static ALGAE = new Ore("Algae") //not an ore but it's easiest to just throw it in
     static SANDSTONE = new Ore("Sandstone")
     static MALACHITE = new Ore("Malachite")
     static MAGNETITE = new Ore("Magnetite")
@@ -13,7 +14,7 @@ export class Ore {
 
     static getOres() {
         //make sure they are ordered by rarity asc
-        return [this.SANDSTONE,this.MAGNETITE,this.MALACHITE,this.PEROTENE,this.ILMENITE,this.COCHINIUM]
+        return [this.ALGAE,this.SANDSTONE,this.MAGNETITE,this.MALACHITE,this.PEROTENE,this.ILMENITE,this.COCHINIUM]
     }
 
     toString() {

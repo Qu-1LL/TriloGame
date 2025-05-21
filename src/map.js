@@ -22,8 +22,11 @@ export class Cave extends Graph {
 
     constructor () {
         super()
-        this.#generateCave();
-          
+        while( this.tiles.size < 28000) {
+            this.tiles = new Map();
+            this.#generateCave();
+        }
+        console.log("total tiles: "+this.tiles.size)
     }
 
     #generateCave() {
@@ -83,7 +86,6 @@ export class Cave extends Graph {
         for (let i = 0; i < 2 + (radius / degradeMult) + (radius / cavernCount) ; i++) {
             this.#degradeCave()
         }
-       
 
         //bit of cleanup
         myValues = [...this.tiles.keys()]
@@ -133,13 +135,22 @@ export class Cave extends Graph {
 
     #fillOres() {
 
-        //this code is stupid but guarantees player has access to sandstone easily
+        //this code is stupid but guarantees player has access to sandstone & algae easily
         let dumbSuccess = true
         while (dumbSuccess) {
             let dumbX = Math.floor(Math.random() * 17) - 8
             let dumbY = Math.floor(Math.random() * 17) - 8
             if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
                 this.getTile(dumbX+","+dumbY).setBase('Sandstone')
+                dumbSuccess = false
+            }
+        }
+        dumbSuccess = true
+        while (dumbSuccess) {
+            let dumbX = Math.floor(Math.random() * 13) - 6
+            let dumbY = Math.floor(Math.random() * 13) - 6
+            if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
+                this.getTile(dumbX+","+dumbY).setBase('Algae')
                 dumbSuccess = false
             }
         }
