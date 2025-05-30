@@ -1,6 +1,8 @@
 
 import { Assets, Application, Sprite, Texture, Container } from 'pixi.js'
-import { Cave, toCoords } from './map.js'
+import { Cave, toCoords } from './cave.js'
+import { Building } from './building.js'
+import { Creature } from './creature.js'
 
 const app = new Application();
 
@@ -25,7 +27,10 @@ async function preload()
         { alias: 'Magnetite', src: '/MagnetiteTile.png'},
         { alias: 'Perotene', src: '/PeroteneTile.png'},
         { alias: 'Ilmenite', src: '/IlmeniteTile.png'},
-        { alias: 'Cochinium', src: '/CochiniumTile.png'}
+        { alias: 'Cochinium', src: '/CochiniumTile.png'},
+        { alias: 'Trilobite', src: '/Trilobite.png'},
+        { alias: 'Queen', src: '/Queen.png'},
+        { alias: 'path', src: '/Path.png'}
     ];
 
     // Load the assets defined above.
@@ -36,25 +41,43 @@ async function preload()
 {
     await setup();
     await preload();
+    
+    //"global" variables
 
     let currentScale = 1
 
+    let dragging = false;
+    let dragStartPos = null;
+
+    let totalXDelt = 0
+    let totalYDelt = 0
+
+    var selectedCreature = new class {
+        constructor() {
+            this.creature = null
+        }
+
+        setCreature(c) {
+            this.creature = c
+        }
+    }
+
+    //functions called by main
+
     function whenWallMined (interactionEvent, myTile, cave, tileContainer, emptyCoords)  {
+
+        if (dragging) {
+            return
+        }
 
         myTile.on("mouseup", () => {
             return
         })
 
-
         myTile.texture = Texture.from('empty')
         let newEmpty = cave.getTile(emptyCoords)
-        console.log("tile clicked: ")
-        console.log(emptyCoords)
-        console.log(newEmpty)
         newEmpty.setBase('empty')
-
-        
-                
+  
         let myDelts = new Map();
         myDelts.set('n',{x:0,y:-1})
         myDelts.set('s',{x:0,y:1})
@@ -76,8 +99,6 @@ async function preload()
         for (let dir of myDelts.values()) {
             let newCoords = (myCoords.x + dir.x) + "," + (myCoords.y + dir.y)
             let wallTile = cave.addTile(newCoords)
-            console.log("tile added: ")
-            console.log(wallTile)
             wallTile.setBase('wall')
 
             let newDelts = new Map();
@@ -87,14 +108,10 @@ async function preload()
             newDelts.set('w',{x:-1,y:0})
 
             let wallCoords = toCoords(newCoords)
-            console.log("new wall: ")
-            console.log(wallCoords)
             for (let d of newDelts.values()) {
                 let newN = cave.getTile((wallCoords.x + d.x) + "," + (wallCoords.y + d.y))
                 
                 if (newN != undefined) {
-                    console.log("new neighbor: ")
-                    console.log(newN)
                     wallTile.addNeighbor(newN)
                     newN.addNeighbor(wallTile)
                 }
@@ -106,7 +123,7 @@ async function preload()
             newTile.baseX = interactionEvent.currentTarget.baseX + (dir.x * 80)
             newTile.baseY = interactionEvent.currentTarget.baseY + (dir.y * 80)
 
-            newTile.anchor.set(0)
+            newTile.anchor.set(0.5)
             newTile.interactive = true;
             newTile.buttonMode = true;
 
@@ -114,52 +131,99 @@ async function preload()
 
             tileContainer.addChild(newTile)
 
-            newTile.on("pointertap", (interactionEvent) => {
-                    whenWallMined(interactionEvent, newTile, cave, tileContainer,newCoords)
-                })
+            newTile.on("mouseup", (interactionEvent) => {
+                whenWallMined(interactionEvent, newTile, cave, tileContainer,newCoords)
+            })
         }
     }
 
-    const cave = new Cave();
+    function emptyTileClicked(coords,myCave) {
+        if (!dragging && selectedCreature.creature) {
+            let path = myCave.bfsPath((selectedCreature.creature.location.x+","+selectedCreature.creature.location.y),coords)
+            if(!path) {
+                selectedCreature.setCreature(null)
+                return
+            } 
+            path.shift()
+            selectedCreature.creature.queue.clear()
+            for (let i = 0; i< path.length;i++) {
+                selectedCreature.creature.queue.enqueue(toCoords(path[i]))
+            }
+            
+            selectedCreature.setCreature(null)
+        }
+    }
+
+    let floatingPaths = new Set()
+
+    function emptyTileHover(coords,myCave) {
+        //something in here breaks the code
+
+        // if (!dragging && selectedCreature.creature) {
+        //     let path = myCave.bfsPath((selectedCreature.creature.location.x+","+selectedCreature.creature.location.y),coords)
+        //     let myCoords = toCoords(path.shift())
+        //     let myDX = 0
+        //     let myDY = 0
+        //     while(path.length > 0) {
+        //         let nextCoords = toCoords(path[0])
+        //         let dx = myCoords.x - nextCoords.x
+        //         let dy = myCoords.y - nextCoords.y
+        //         myDX += dx
+        //         myDY += dy
+        //         let nextSprite = new Sprite.from('path')
+        //         nextSprite.x = selectedCreature.creature.x + (myDX * 80 * currentScale)
+        //         nextSprite.y = selectedCreature.creature.y + (myDY * 80 * currentScale)
+        //         nextSprite.baseX = selectedCreature.creature.x + (myDX * 80)
+        //         nextSprite.baseY = selectedCreature.creature.y + (myDY * 80)
+
+        //         if (dy !== 0) {
+        //             nextSprite.rotation = Math.PI / 2
+        //         }
+
+        //         tileContainer.addChild(nextSprite)
+        //         floatingPaths.add(nextSprite)
+        //     }
+        // }
+    }
+
+    function emptyTileHoverExit() {
+        if (!dragging && selectedCreature.creature) {
+            for (let sprite of floatingPaths) {
+                sprite.parent.removeChild(sprite);
+                sprite.destroy()
+            }
+            floatingPaths.clear()
+        }
+    }
+
+    //setting up stage
+    
+    const tileContainer = new Container();
+    app.stage.addChild(tileContainer)
 
     let midx = app.screen.width / 2
     let midy = app.screen.height / 2
 
-    let allCoords = cave.getCoords()
+    //setting up game state
 
-    const tileContainer = new Container();
+    const cave = new Cave(tileContainer,app,whenWallMined,emptyTileClicked,emptyTileHover,emptyTileHoverExit);
+    
+    let queen = new Building('Queen',{x:3,y:3},[[1,1,1],[1,0,1],[1,1,1]])
+    cave.build(queen,{x:-1,y:-1},Sprite.from('Queen'),currentScale)
 
+    let trilo = new Creature('Jeffery',{x:1,y:-1},Sprite.from('Trilobite'),selectedCreature)
+    cave.spawn(trilo,currentScale)
 
-    for (let i = 0; i < allCoords.length; i++) {
-        let myAsset = cave.getTile(allCoords[i]).getBase()
-        let myTile = Sprite.from(myAsset)
+    trilo = new Creature('Quinton',{x:1,y:1},Sprite.from('Trilobite'),selectedCreature)
+    cave.spawn(trilo,currentScale)
 
-        if (myAsset == 'wall') {
-            myTile.on("mouseup", (interactionEvent) => {
-                if (!dragging) {
-                    whenWallMined(interactionEvent, myTile, cave, tileContainer,allCoords[i])
-                }
-            })
-        }
+    trilo = new Creature('Yeetmuncher',{x:-1,y:-1},Sprite.from('Trilobite'),selectedCreature)
+    cave.spawn(trilo,currentScale)
 
-        myTile.anchor.set(0)
-        let myCoords = toCoords(allCoords[i])
+    trilo = new Creature('Sigma',{x:-1,y:1},Sprite.from('Trilobite'),selectedCreature)
+    cave.spawn(trilo,currentScale)
 
-        myTile.x = midx + (myCoords.x * 80)
-        myTile.y = midy + (myCoords.y * 80)
-        myTile.baseX = myTile.position.x
-        myTile.baseY = myTile.position.y
-
-        tileContainer.addChild(myTile)
-
-        myTile.interactive = true;
-        myTile.buttonMode = true;
-    }
-
-    app.stage.addChild(tileContainer)
-
-    let dragging = false;
-    let dragStartPos = null;
+    //event listeners relative to full game
 
     window.addEventListener("wheel", (event) => {
         if (dragging) {
@@ -184,7 +248,6 @@ async function preload()
             child.y = midy + ((child.baseY - midy) * currentScale)
         }
     })
-
 
     window.addEventListener('mousedown', (e) => {
         const rect = app.canvas.getBoundingClientRect();
@@ -221,14 +284,17 @@ async function preload()
 
     window.addEventListener('mouseup', (e) => {
         if (dragging) {
-            const rect = app.canvas.getBoundingClientRect();
-            const pos = {
+            let rect = app.canvas.getBoundingClientRect();
+            let pos = {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             };
 
-            const dx = pos.x - dragStartPos.x;
-            const dy = pos.y - dragStartPos.y;
+            let dx = pos.x - dragStartPos.x;
+            let dy = pos.y - dragStartPos.y;
+
+            totalXDelt += dx
+            totalYDelt += dy
             
             for (let child of tileContainer.children) {
                 child.baseX = child.baseX + (dx * (1/currentScale))
@@ -240,6 +306,15 @@ async function preload()
         dragStartPos = null;
         dragging = false;
     });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key ==='Enter') {
+            console.log('Enter pressed')
+            for(let creature of cave.creatures) {
+                creature.move(currentScale,midx,midy)
+            }
+        }
+    })
 
 
 })();

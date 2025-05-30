@@ -5,6 +5,8 @@ export class Tile {
         this.value = value;
         this.holding = new Map();
         this.holding.set('base', 'empty')
+        this.holding.set('built','none')
+        this.creatureCanFit = true
         this.adjacent = new Set();
     }
 
@@ -27,6 +29,18 @@ export class Tile {
     setBase(myBase) {
         this.holding.set('base', myBase)
     } 
+
+    setBuilt(building) {
+        this.holding.set('built',building)
+    }
+
+    creatureFits() {
+        return this.creatureCanFit
+    }
+
+    canBuild() {
+        return this.holding.get('base') == 'empty' && this.holding.get('built') == 'none'
+    }
 
     getRandomNeighbor() {
         let myNum = Math.floor(Math.random() * this.adjacent.size)
@@ -79,4 +93,5 @@ export class Graph {
     getTiles() {
         return [...this.tiles.values()];
     }
+
 }

@@ -1,4 +1,5 @@
 
+import { Assets, Application, Sprite, Texture, Container } from 'pixi.js'
 import {Graph, Tile } from './graph-data.js'
 import { Ore } from './ores.js'
 
@@ -20,13 +21,50 @@ export function toCoords(coords) {
 
 export class Cave extends Graph {
 
-    constructor () {
+    constructor (container,app,whenWallMined,emptyTileClicked,emptyTileHover,emptyTileHoverExit) {
         super()
         while( this.tiles.size < 28000) {
             this.tiles = new Map();
             this.#generateCave();
         }
-        console.log("total tiles: "+this.tiles.size)
+        this.creatures = new Set();
+        this.buildings = new Set();
+        this.container = container
+        this.app = app
+
+        for (let coords of this.tiles.keys()) {
+            let myAsset = this.getTile(coords).getBase()
+            let myTile = Sprite.from(myAsset)
+    
+            if (myAsset == 'wall') {
+                myTile.on("mouseup", (interactionEvent) => {
+                    whenWallMined(interactionEvent, myTile, this, container,coords)
+                })
+            } else {
+                myTile.on("mouseup", () => {
+                    emptyTileClicked(coords,this)
+                })
+                myTile.on("pointerover", () => {
+                    emptyTileHover(coords,this)
+                })
+                myTile.on("pointerout", () => {
+                    emptyTileHoverExit()
+                })
+            }
+    
+            myTile.anchor.set(0.5)
+            let myCoords = toCoords(coords)
+    
+            myTile.x = (app.screen.width / 2) + (myCoords.x * 80)
+            myTile.y = (app.screen.height / 2) + (myCoords.y * 80)
+            myTile.baseX = myTile.position.x
+            myTile.baseY = myTile.position.y
+    
+            container.addChild(myTile)
+    
+            myTile.interactive = true;
+            myTile.buttonMode = true;
+        }
     }
 
     #generateCave() {
@@ -100,6 +138,7 @@ export class Cave extends Graph {
         for (let i = 0; i < myValues.length; i++) {
             if (this.getTile(myValues[i]).getNeighbors().size < 4) {
                 this.getTile(myValues[i]).setBase('wall')
+                this.getTile(myValues[i]).creatureCanFit = false
             }
         }
         
@@ -142,6 +181,7 @@ export class Cave extends Graph {
             let dumbY = Math.floor(Math.random() * 17) - 8
             if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
                 this.getTile(dumbX+","+dumbY).setBase('Sandstone')
+                this.getTile(dumbX+","+dumbY).creatureCanFit = false
                 dumbSuccess = false
             }
         }
@@ -151,6 +191,7 @@ export class Cave extends Graph {
             let dumbY = Math.floor(Math.random() * 13) - 6
             if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
                 this.getTile(dumbX+","+dumbY).setBase('Algae')
+                this.getTile(dumbX+","+dumbY).creatureCanFit = false
                 dumbSuccess = false
             }
         }
@@ -166,6 +207,7 @@ export class Cave extends Graph {
                 let myVect = getDistance(myCoords.x,myCoords.y,0,0) 
                 if ( myVect > myLower && myVect < myUpper && tile.getBase() == 'empty') {
                     tile.setBase(ore.name)
+                    tile.creatureCanFit = false
                     let veinCount = 0
                     let myNum = Math.random()
                     while(myNum < 0.85 && veinCount <= 2 + (Ore.getOres().length - oreCount)) {
@@ -177,6 +219,7 @@ export class Cave extends Graph {
                         }
                         if (brokenCount < 4) {
                             n.setBase(ore.name)
+                            n.creatureCanFit = false
                         }
                         myNum = Math.random()
                         veinCount++
@@ -187,7 +230,7 @@ export class Cave extends Graph {
                     break
                 }
             }
-            console.log(ore.name+" spawned "+count+" veins / "+ Math.ceil(((cavernCount / 5) + (cavernCount * radius * (Ore.getOres().length - oreCount)) / oreMult)))
+            // console.log(ore.name+" spawned "+count+" veins / "+ Math.ceil(((cavernCount / 5) + (cavernCount * radius * (Ore.getOres().length - oreCount)) / oreMult)))
             oreCount++
         }
     }
@@ -207,6 +250,107 @@ export class Cave extends Graph {
                 }
             }
         } 
+    }
+
+    canBuild(building,location) {
+        for(let x = 0; x < building.size.x; x++) {
+            for (let y = 0; y < building.size.y; y++) {
+                let theseCoords = (location.x + x) + "," + (location.y + y)
+                let curTile = this.tiles.get(theseCoords)
+                if (curTile.getBase() !== 'empty') {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    build(building,location,sprite,currentScale) {
+        if (!this.canBuild(building,location)) {
+            return
+        }
+        this.buildings.add(building)
+        //still needs to check if a building isn't overlapping
+        for(let x = 0; x < building.size.x; x++) {
+            for (let y = 0; y < building.size.y; y++) {
+                if (building.openMap[y][x] > 1) {
+                    continue
+                }
+                let theseCoords = (location.x + x) + "," + (location.y + y)
+                let curTile = this.tiles.get(theseCoords)
+                curTile.setBuilt(building)
+                curTile.creatureCanFit = (building.openMap[y][x] === 1)
+            }
+        }
+
+        sprite.anchor.set(0.5)
+        sprite.scale.set
+        sprite.x = (this.app.screen.width / 2) + (80 * location.x * currentScale) + (sprite.width / 2 * currentScale) - 40
+        sprite.y = (this.app.screen.height / 2) + (80 * location.y * currentScale) + (sprite.height / 2 * currentScale) - 40
+        sprite.baseX = (this.app.screen.width / 2) + (80 * location.x) + (sprite.width / 2) - 40
+        sprite.baseY = (this.app.screen.height / 2) + (80 * location.y) + (sprite.height / 2) - 40
+        sprite.interactive = true;
+        sprite.buttonMode = true;
+
+        this.container.addChild(sprite)
+    }
+
+    spawn(creature,currentScale) {
+
+        if (!this.getTile((creature.location.x+","+creature.location.y)).creatureFits()) {
+            return
+        }
+
+        creature.sprite.anchor.set(0.5)
+        creature.sprite.x = (this.app.screen.width / 2) + (80 * creature.location.x * currentScale)
+        creature.sprite.y = (this.app.screen.height / 2) + (80 * creature.location.y * currentScale)
+        creature.sprite.baseX = (this.app.screen.width / 2) + (80 * creature.location.x) 
+        creature.sprite.baseY = (this.app.screen.height / 2) + (80 * creature.location.y)
+        creature.sprite.interactive = true;
+        creature.sprite.buttonMode = true;
+
+        this.container.addChild(creature.sprite)
+
+        this.creatures.add(creature)
+    }
+
+    bfsPath(startKey, goalKey) {
+
+        const queue = [startKey];
+        const visited = new Set([startKey]);
+        const cameFrom = new Map();
+
+        let timeCount = 0
+
+        while (queue.length > 0 && timeCount < 7850) {
+
+            const currentKey = queue.shift();
+
+            if (currentKey === goalKey) {
+                let path = [];
+                let k = goalKey;
+                while (k !== undefined) {
+                    path.push(k);
+                    k = cameFrom.get(k);
+                }
+                path.reverse();
+                return path
+            }
+
+            for (let n of this.getTile(currentKey).getNeighbors()) {
+
+                if (!visited.has(n.value)) {
+                    timeCount++
+                    if (n.creatureCanFit) {
+                        queue.push(n.value);
+                        visited.add(n.value);
+                        cameFrom.set(n.value, currentKey);
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     getCoords() {
