@@ -19,18 +19,18 @@ async function preload()
 {
     // Create an array of asset data to load.
     const assets = [
-        { alias: 'empty', src: '/assets/EmptyTile.png' },
-        { alias: 'wall', src: '/assets/CaveWall.png'},
-        { alias: 'Algae', src: '/assets/AlgaeTile.png'},
-        { alias: 'Sandstone', src: '/assets/SandTile.png'},
-        { alias: 'Malachite', src: '/assets/MalachiteTile.png'},
-        { alias: 'Magnetite', src: '/assets/MagnetiteTile.png'},
-        { alias: 'Perotene', src: '/assets/PeroteneTile.png'},
-        { alias: 'Ilmenite', src: '/assets/IlmeniteTile.png'},
-        { alias: 'Cochinium', src: '/assets/CochiniumTile.png'},
-        { alias: 'Trilobite', src: '/assets/Trilobite.png'},
-        { alias: 'Queen', src: '/assets/Queen.png'},
-        { alias: 'path', src: '/assets/Path.png'}
+        { alias: 'empty', src: '/EmptyTile.png' },
+        { alias: 'wall', src: '/CaveWall.png'},
+        { alias: 'Algae', src: '/AlgaeTile.png'},
+        { alias: 'Sandstone', src: '/SandTile.png'},
+        { alias: 'Malachite', src: '/MalachiteTile.png'},
+        { alias: 'Magnetite', src: '/MagnetiteTile.png'},
+        { alias: 'Perotene', src: '/PeroteneTile.png'},
+        { alias: 'Ilmenite', src: '/IlmeniteTile.png'},
+        { alias: 'Cochinium', src: '/CochiniumTile.png'},
+        { alias: 'Trilobite', src: '/Trilobite.png'},
+        { alias: 'Queen', src: '/Queen.png'},
+        { alias: 'path', src: '/Path.png'}
     ];
 
     // Load the assets defined above.
