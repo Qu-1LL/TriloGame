@@ -17,20 +17,22 @@ async function setup()
 
 async function preload()
 {
+    const base = import.meta.env.BASE_URL;
+
     // Create an array of asset data to load.
     const assets = [
-        { alias: 'empty', src: '/EmptyTile.png' },
-        { alias: 'wall', src: '/CaveWall.png'},
-        { alias: 'Algae', src: '/AlgaeTile.png'},
-        { alias: 'Sandstone', src: '/SandTile.png'},
-        { alias: 'Malachite', src: '/MalachiteTile.png'},
-        { alias: 'Magnetite', src: '/MagnetiteTile.png'},
-        { alias: 'Perotene', src: '/PeroteneTile.png'},
-        { alias: 'Ilmenite', src: '/IlmeniteTile.png'},
-        { alias: 'Cochinium', src: '/CochiniumTile.png'},
-        { alias: 'Trilobite', src: '/Trilobite.png'},
-        { alias: 'Queen', src: '/Queen.png'},
-        { alias: 'path', src: '/Path.png'}
+        { alias: 'empty', src: `${base}assets/EmptyTile.png` },
+        { alias: 'wall', src: `${base}assets/CaveWall.png` },
+        { alias: 'Algae', src: `${base}assets/AlgaeTile.png` },
+        { alias: 'Sandstone', src: `${base}assets/SandTile.png` },
+        { alias: 'Malachite', src: `${base}assets/MalachiteTile.png` },
+        { alias: 'Magnetite', src: `${base}assets/MagnetiteTile.png` },
+        { alias: 'Perotene', src: `${base}assets/PeroteneTile.png` },
+        { alias: 'Ilmenite', src: `${base}assets/IlmeniteTile.png` },
+        { alias: 'Cochinium', src: `${base}assets/CochiniumTile.png` },
+        { alias: 'Trilobite', src: `${base}assets/Trilobite.png` },
+        { alias: 'Queen', src: `${base}assets/Queen.png` },
+        { alias: 'path', src: `${base}assets/Path.png` }
     ];
 
     // Load the assets defined above.
