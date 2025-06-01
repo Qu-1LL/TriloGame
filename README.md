@@ -1,4 +1,4 @@
-This game is an implementation of a game idea I've had for a while. If you are reading this, the gam is in progress, and further documentation is on the way!
+This game is an implementation of a game idea I've had for a while. If you are reading this, the game is in progress, and further documentation is on the way!
 
 The game is deployed to github pages here: https://qu-1ll.github.io/TriloGame/ 
 
