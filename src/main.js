@@ -1,10 +1,10 @@
 
-import { Assets, Application, Sprite, Texture, Container } from 'pixi.js'
+import * as PIXI from 'pixi.js'
 import { Cave, toCoords } from './cave.js'
 import { Building } from './building.js'
 import { Creature } from './creature.js'
 
-const app = new Application();
+const app = new PIXI.Application();
 
 async function setup()
 {
@@ -19,22 +19,22 @@ async function preload()
 {
     // Create an array of asset data to load.
     const assets = [
-        { alias: 'empty', src: '/EmptyTile.png' },
-        { alias: 'wall', src: '/CaveWall.png'},
-        { alias: 'Algae', src: '/AlgaeTile.png'},
-        { alias: 'Sandstone', src: '/SandTile.png'},
-        { alias: 'Malachite', src: '/MalachiteTile.png'},
-        { alias: 'Magnetite', src: '/MagnetiteTile.png'},
-        { alias: 'Perotene', src: '/PeroteneTile.png'},
-        { alias: 'Ilmenite', src: '/IlmeniteTile.png'},
-        { alias: 'Cochinium', src: '/CochiniumTile.png'},
-        { alias: 'Trilobite', src: '/Trilobite.png'},
-        { alias: 'Queen', src: '/Queen.png'},
-        { alias: 'path', src: '/Path.png'}
+        { alias: 'empty', src: '/assets/EmptyTile.png' },
+        { alias: 'wall', src: '/assets/CaveWall.png'},
+        { alias: 'Algae', src: '/assets/AlgaeTile.png'},
+        { alias: 'Sandstone', src: '/assets/SandTile.png'},
+        { alias: 'Malachite', src: '/assets/MalachiteTile.png'},
+        { alias: 'Magnetite', src: '/assets/MagnetiteTile.png'},
+        { alias: 'Perotene', src: '/assets/PeroteneTile.png'},
+        { alias: 'Ilmenite', src: '/assets/IlmeniteTile.png'},
+        { alias: 'Cochinium', src: '/assets/CochiniumTile.png'},
+        { alias: 'Trilobite', src: '/assets/Trilobite.png'},
+        { alias: 'Queen', src: '/assets/Queen.png'},
+        { alias: 'path', src: '/assets/Path.png'}
     ];
 
     // Load the assets defined above.
-    await Assets.load(assets);
+    await PIXI.Assets.load(assets);
 }
 
 (async () =>
@@ -198,7 +198,7 @@ async function preload()
 
     //setting up stage
     
-    const tileContainer = new Container();
+    const tileContainer = new PIXI.Container();
     app.stage.addChild(tileContainer)
 
     let midx = app.screen.width / 2
@@ -209,18 +209,18 @@ async function preload()
     const cave = new Cave(tileContainer,app,whenWallMined,emptyTileClicked,emptyTileHover,emptyTileHoverExit);
     
     let queen = new Building('Queen',{x:3,y:3},[[1,1,1],[1,0,1],[1,1,1]])
-    cave.build(queen,{x:-1,y:-1},Sprite.from('Queen'),currentScale)
+    cave.build(queen,{x:-1,y:-1},PIXI.Sprite.from('Queen'),currentScale)
 
-    let trilo = new Creature('Jeffery',{x:1,y:-1},Sprite.from('Trilobite'),selectedCreature)
+    let trilo = new Creature('Jeffery',{x:1,y:-1},PIXI.Sprite.from('Trilobite'),selectedCreature)
     cave.spawn(trilo,currentScale)
 
-    trilo = new Creature('Quinton',{x:1,y:1},Sprite.from('Trilobite'),selectedCreature)
+    trilo = new Creature('Quinton',{x:1,y:1},PIXI.Sprite.from('Trilobite'),selectedCreature)
     cave.spawn(trilo,currentScale)
 
-    trilo = new Creature('Yeetmuncher',{x:-1,y:-1},Sprite.from('Trilobite'),selectedCreature)
+    trilo = new Creature('Yeetmuncher',{x:-1,y:-1},PIXI.Sprite.from('Trilobite'),selectedCreature)
     cave.spawn(trilo,currentScale)
 
-    trilo = new Creature('Sigma',{x:-1,y:1},Sprite.from('Trilobite'),selectedCreature)
+    trilo = new Creature('Sigma',{x:-1,y:1},PIXI.Sprite.from('Trilobite'),selectedCreature)
     cave.spawn(trilo,currentScale)
 
     //event listeners relative to full game

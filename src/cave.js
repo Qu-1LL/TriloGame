@@ -1,5 +1,5 @@
 
-import { Assets, Application, Sprite, Texture, Container } from 'pixi.js'
+import * as PIXI from 'pixi.js'
 import {Graph, Tile } from './graph-data.js'
 import { Ore } from './ores.js'
 
@@ -34,7 +34,7 @@ export class Cave extends Graph {
 
         for (let coords of this.tiles.keys()) {
             let myAsset = this.getTile(coords).getBase()
-            let myTile = Sprite.from(myAsset)
+            let myTile = PIXI.Sprite.from(myAsset)
     
             if (myAsset == 'wall') {
                 myTile.on("mouseup", (interactionEvent) => {

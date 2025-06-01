@@ -1,5 +1,5 @@
 
-import { Assets, Application, Sprite, Texture, Container } from 'pixi.js'
+import * as PIXI from 'pixi.js'
 import { Cave, toCoords } from './map.js'
 
 export function whenWallMined (interactionEvent, myTile, cave, tileContainer, emptyCoords, dragging, currentScale)  {
@@ -8,7 +8,7 @@ export function whenWallMined (interactionEvent, myTile, cave, tileContainer, em
             return
         })
 
-        myTile.texture = Texture.from('empty')
+        myTile.texture = PIXI.Texture.from('empty')
         let newEmpty = cave.getTile(emptyCoords)
         console.log("tile clicked: ")
         console.log(emptyCoords)
