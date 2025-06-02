@@ -59,6 +59,7 @@ export class Cave extends Graph {
             myTile.y = (app.screen.height / 2) + (myCoords.y * 80)
             myTile.baseX = myTile.position.x
             myTile.baseY = myTile.position.y
+            myTile.zIndex = 0
     
             container.addChild(myTile)
     
@@ -308,6 +309,7 @@ export class Cave extends Graph {
         creature.sprite.baseY = (this.app.screen.height / 2) + (80 * creature.location.y)
         creature.sprite.interactive = true;
         creature.sprite.buttonMode = true;
+        creature.sprite.zIndex = 1
 
         this.container.addChild(creature.sprite)
 

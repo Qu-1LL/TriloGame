@@ -19,7 +19,11 @@ export class Creature {
 
     move(currentScale) {
 
-        let next = this.queue.dequeue()
+        let next = this.queue.peek()
+
+        //if creature can successfully do next
+
+        next = this.queue.dequeue()
 
         if (next === null) {
             return null

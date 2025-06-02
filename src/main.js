@@ -32,7 +32,8 @@ async function preload()
         { alias: 'Cochinium', src: `${base}assets/CochiniumTile.png` },
         { alias: 'Trilobite', src: `${base}assets/Trilobite.png` },
         { alias: 'Queen', src: `${base}assets/Queen.png` },
-        { alias: 'path', src: `${base}assets/Path.png` }
+        { alias: 'path', src: `${base}assets/Path.png` },
+        { alias: 'selected', src: `${base}assets/Selected.png` }
     ];
 
     // Load the assets defined above.
@@ -53,14 +54,41 @@ async function preload()
 
     let totalXDelt = 0
     let totalYDelt = 0
+    
+    //setting up stage
+    
+    const tileContainer = new PIXI.Container();
+    tileContainer.sortableChildren = true
+    app.stage.addChild(tileContainer)
+
+    let midx = app.screen.width / 2
+    let midy = app.screen.height / 2
 
     var selectedCreature = new class {
         constructor() {
             this.creature = null
+            this.selection = PIXI.Sprite.from('selected')
+            this.selection.x = 0
+            this.selection.y = 0
+            this.selection.baseX = 0
+            this.selection.baseY = 0
+            this.selection.visible = false
+            this.selection.anchor.set(0.5)
+            this.selection.zIndex = 10
+            tileContainer.addChild(this.selection)
         }
 
         setCreature(c) {
             this.creature = c
+            if (c == null) {
+                this.selection.visible = false
+            } else {
+                this.selection.x = c.sprite.position.x
+                this.selection.y = c.sprite.position.y
+                this.selection.baseX = c.sprite.baseX
+                this.selection.baseY = c.sprite.baseY
+                this.selection.visible = true
+            }
         }
     }
 
@@ -140,7 +168,14 @@ async function preload()
     }
 
     function emptyTileClicked(coords,myCave) {
-        if (!dragging && selectedCreature.creature) {
+        for (let sprite of floatingPaths) {
+                sprite.parent.removeChild(sprite);
+                sprite.destroy()
+            }
+        floatingPaths.clear()
+
+        if (!dragging && selectedCreature.creature && cave.getTile(coords).creatureCanFit) {
+
             let path = myCave.bfsPath((selectedCreature.creature.location.x+","+selectedCreature.creature.location.y),coords)
             if(!path) {
                 selectedCreature.setCreature(null)
@@ -151,9 +186,9 @@ async function preload()
             for (let i = 0; i< path.length;i++) {
                 selectedCreature.creature.queue.enqueue(toCoords(path[i]))
             }
-            
-            selectedCreature.setCreature(null)
         }
+
+        selectedCreature.setCreature(null)
     }
 
     let floatingPaths = new Set()
@@ -161,31 +196,59 @@ async function preload()
     function emptyTileHover(coords,myCave) {
         //something in here breaks the code
 
-        // if (!dragging && selectedCreature.creature) {
-        //     let path = myCave.bfsPath((selectedCreature.creature.location.x+","+selectedCreature.creature.location.y),coords)
-        //     let myCoords = toCoords(path.shift())
-        //     let myDX = 0
-        //     let myDY = 0
-        //     while(path.length > 0) {
-        //         let nextCoords = toCoords(path[0])
-        //         let dx = myCoords.x - nextCoords.x
-        //         let dy = myCoords.y - nextCoords.y
-        //         myDX += dx
-        //         myDY += dy
-        //         let nextSprite = new Sprite.from('path')
-        //         nextSprite.x = selectedCreature.creature.x + (myDX * 80 * currentScale)
-        //         nextSprite.y = selectedCreature.creature.y + (myDY * 80 * currentScale)
-        //         nextSprite.baseX = selectedCreature.creature.x + (myDX * 80)
-        //         nextSprite.baseY = selectedCreature.creature.y + (myDY * 80)
+        if (!dragging && selectedCreature.creature !== null) {
+            for (let sprite of floatingPaths) {
+                sprite.parent.removeChild(sprite);
+                sprite.destroy()
+            }
+            floatingPaths.clear()
 
-        //         if (dy !== 0) {
-        //             nextSprite.rotation = Math.PI / 2
-        //         }
 
-        //         tileContainer.addChild(nextSprite)
-        //         floatingPaths.add(nextSprite)
-        //     }
-        // }
+            let path = myCave.bfsPath((selectedCreature.creature.location.x+","+selectedCreature.creature.location.y),coords)
+            let myCoords = toCoords(path.shift())
+            let myDX = 0
+            let myDY = 0
+            while(path.length > 0) {
+                let nextCoords = toCoords(path[0])
+                let dx = myCoords.x - nextCoords.x
+                let dy = myCoords.y - nextCoords.y
+                myDX -= dx
+                myDY -= dy
+                let nextSprite = PIXI.Sprite.from('path')
+                nextSprite.x = selectedCreature.creature.sprite.x + (myDX * 80 * currentScale)
+                nextSprite.y = selectedCreature.creature.sprite.y + (myDY * 80 * currentScale)
+                nextSprite.baseX = selectedCreature.creature.sprite.x + (myDX * 80)
+                nextSprite.baseY = selectedCreature.creature.sprite.y + (myDY * 80)
+
+                if (dx > 0) {
+                    nextSprite.x = nextSprite.position.x + (40 * currentScale)
+                    nextSprite.basex += 40
+                } else if (dx < 0) {
+                    nextSprite.x = nextSprite.position.x - (40 * currentScale)
+                    nextSprite.baseX -= 40
+                }
+                if (dy > 0) {
+                    nextSprite.y = nextSprite.position.y + (40 * currentScale)
+                    nextSprite.baseY += 40
+                } else if (dy < 0) {
+                    nextSprite.y = nextSprite.position.y - (40 * currentScale)
+                    nextSprite.baseY -= 40
+                }
+
+                nextSprite.scale.set(currentScale)
+                nextSprite.zIndex = 2
+                nextSprite.anchor.set(0.5)
+
+                if (dy !== 0) {
+                    nextSprite.rotation = Math.PI / 2
+                }
+
+                tileContainer.addChild(nextSprite)
+                floatingPaths.add(nextSprite)
+
+                myCoords = toCoords(path.shift())
+            }
+        }
     }
 
     function emptyTileHoverExit() {
@@ -197,14 +260,6 @@ async function preload()
             floatingPaths.clear()
         }
     }
-
-    //setting up stage
-    
-    const tileContainer = new PIXI.Container();
-    app.stage.addChild(tileContainer)
-
-    let midx = app.screen.width / 2
-    let midy = app.screen.height / 2
 
     //setting up game state
 
