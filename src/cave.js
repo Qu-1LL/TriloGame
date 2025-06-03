@@ -3,6 +3,8 @@ import * as PIXI from 'pixi.js'
 import {Graph, Tile } from './graph-data.js'
 import { Ore } from './ores.js'
 
+import { Game } from './game.js'
+
 const degradeMult = 12
 const holeLimit = 10
 const degradeLimit = 3
@@ -21,7 +23,7 @@ export function toCoords(coords) {
 
 export class Cave extends Graph {
 
-    constructor (container,app,whenWallMined,emptyTileClicked,emptyTileHover,emptyTileHoverExit) {
+    constructor (app, game) {
         super()
         while( this.tiles.size < 28000) {
             this.tiles = new Map();
@@ -29,8 +31,8 @@ export class Cave extends Graph {
         }
         this.creatures = new Set();
         this.buildings = new Set();
-        this.container = container
         this.app = app
+        this.game = game
 
         for (let coords of this.tiles.keys()) {
             let myAsset = this.getTile(coords).getBase()
@@ -38,30 +40,30 @@ export class Cave extends Graph {
     
             if (myAsset == 'wall') {
                 myTile.on("mouseup", (interactionEvent) => {
-                    whenWallMined(interactionEvent, myTile, this, container,coords)
+                    this.game.whenWallMined(interactionEvent, myTile, this, container,coords)
                 })
             } else {
                 myTile.on("mouseup", () => {
-                    emptyTileClicked(coords,this)
+                    this.game.emptyTileClicked(coords,this)
                 })
                 myTile.on("pointerover", () => {
-                    emptyTileHover(coords,this)
+                    this.game.emptyTileHover(coords,this)
                 })
                 myTile.on("pointerout", () => {
-                    emptyTileHoverExit()
+                    this.game.emptyTileHoverExit()
                 })
             }
     
             myTile.anchor.set(0.5)
             let myCoords = toCoords(coords)
     
-            myTile.x = (app.screen.width / 2) + (myCoords.x * 80)
-            myTile.y = (app.screen.height / 2) + (myCoords.y * 80)
+            myTile.x = this.game.midx + (myCoords.x * 80)
+            myTile.y = this.game.midy + (myCoords.y * 80)
             myTile.baseX = myTile.position.x
             myTile.baseY = myTile.position.y
             myTile.zIndex = 0
     
-            container.addChild(myTile)
+            this.game.tileContainer.addChild(myTile)
     
             myTile.interactive = true;
             myTile.buttonMode = true;
@@ -266,7 +268,7 @@ export class Cave extends Graph {
         return true
     }
 
-    build(building,location,sprite,currentScale) {
+    build(building,location,sprite) {
         if (!this.canBuild(building,location)) {
             return
         }
@@ -286,32 +288,32 @@ export class Cave extends Graph {
 
         sprite.anchor.set(0.5)
         sprite.scale.set
-        sprite.x = (this.app.screen.width / 2) + (80 * location.x * currentScale) + (sprite.width / 2 * currentScale) - 40
-        sprite.y = (this.app.screen.height / 2) + (80 * location.y * currentScale) + (sprite.height / 2 * currentScale) - 40
-        sprite.baseX = (this.app.screen.width / 2) + (80 * location.x) + (sprite.width / 2) - 40
-        sprite.baseY = (this.app.screen.height / 2) + (80 * location.y) + (sprite.height / 2) - 40
+        sprite.x = (this.game.midx) + (80 * location.x * this.game.currentScale) + (sprite.width / 2 * this.game.currentScale) - 40
+        sprite.y = (this.game.midy) + (80 * location.y * this.game.currentScale) + (sprite.height / 2 * this.game.currentScale) - 40
+        sprite.baseX = (this.game.midx) + (80 * location.x) + (sprite.width / 2) - 40
+        sprite.baseY = (this.game.midy) + (80 * location.y) + (sprite.height / 2) - 40
         sprite.interactive = true;
         sprite.buttonMode = true;
 
-        this.container.addChild(sprite)
+        this.game.tileContainer.addChild(sprite)
     }
 
-    spawn(creature,currentScale) {
+    spawn(creature) {
 
         if (!this.getTile((creature.location.x+","+creature.location.y)).creatureFits()) {
             return
         }
 
         creature.sprite.anchor.set(0.5)
-        creature.sprite.x = (this.app.screen.width / 2) + (80 * creature.location.x * currentScale)
-        creature.sprite.y = (this.app.screen.height / 2) + (80 * creature.location.y * currentScale)
-        creature.sprite.baseX = (this.app.screen.width / 2) + (80 * creature.location.x) 
-        creature.sprite.baseY = (this.app.screen.height / 2) + (80 * creature.location.y)
+        creature.sprite.x = (this.game.midx) + (80 * creature.location.x * this.game.currentScale)
+        creature.sprite.y = (this.game.midy) + (80 * creature.location.y * this.game.currentScale)
+        creature.sprite.baseX = (this.game.midx) + (80 * creature.location.x) 
+        creature.sprite.baseY = (this.game.midy) + (80 * creature.location.y)
         creature.sprite.interactive = true;
         creature.sprite.buttonMode = true;
         creature.sprite.zIndex = 1
 
-        this.container.addChild(creature.sprite)
+        this.game.tileContainer.addChild(creature.sprite)
 
         this.creatures.add(creature)
     }

@@ -1,23 +1,25 @@
 
 import { NodeQueue } from './queue-data.js'
+import { Game } from './game.js'
 
 export class Creature {
-    constructor(name,location,sprite,selectedCreature) {
+    constructor(name,location,sprite,game) {
         this.name = name
         this.queue = new NodeQueue()
         this.location = location
         this.sprite = sprite
+        this.game = game
 
         sprite.on('mouseup', (interactionEvent) => {
-            if (selectedCreature.creature) {
-                selectedCreature.setCreature(null)
+            if (this.game.selected.object) {
+                this.game.selected.setSelected(null)
                 return
             }
-            selectedCreature.setCreature(this)
+            this.game.selected.setSelected(this)
         })
     }
 
-    move(currentScale) {
+    move() {
 
         let next = this.queue.peek()
 
@@ -32,8 +34,8 @@ export class Creature {
             let moveX = this.location.x - next.x
             let moveY = this.location.y - next.y
 
-            this.sprite.x = this.sprite.x + (80 * currentScale * -moveX)
-            this.sprite.y = this.sprite.y + (80 * currentScale * -moveY)
+            this.sprite.x = this.sprite.x + (80 * this.game.currentScale * -moveX)
+            this.sprite.y = this.sprite.y + (80 * this.game.currentScale * -moveY)
 
             this.sprite.baseX = this.sprite.baseX + (80 * -moveX)
             this.sprite.baseY = this.sprite.baseY + (80 * -moveY)
