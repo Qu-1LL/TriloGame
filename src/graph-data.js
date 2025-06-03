@@ -8,10 +8,12 @@ export class Tile {
         this.holding.set('built','none')
         this.creatureCanFit = true
         this.adjacent = new Set();
+        this.sprite = null
     }
 
     addNeighbor(Tile) {
         this.adjacent.add(Tile);
+        Tile.adjacent.add(this)
     }
 
     removeNeighbor(Tile) {

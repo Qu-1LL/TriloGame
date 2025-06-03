@@ -53,9 +53,15 @@ export class Game {
         }(this.tileContainer)
     }
 
-
-
-    //functions called by main
+    cleanActive() {
+        for (let sprite of this.floatingPaths) {
+            sprite.parent.removeChild(sprite);
+            sprite.destroy()
+        }
+        this.floatingPaths.clear()
+        this.selected.setSelected(null)
+        
+    }
 
     whenWallMined (interactionEvent, myTile, cave, emptyCoords)  {
 
@@ -67,9 +73,20 @@ export class Game {
             return
         })
 
-        myTile.texture = Texture.from('empty')
+        myTile.texture = PIXI.Texture.from('empty')
         let newEmpty = cave.getTile(emptyCoords)
         newEmpty.setBase('empty')
+        newEmpty.creatureCanFit = true
+
+        myTile.on("mouseup", () => {
+            this.emptyTileClicked(emptyCoords,cave)
+        })
+        myTile.on("pointerover", () => {
+            this.emptyTileHover(emptyCoords,cave)
+        })
+        myTile.on("pointerout", () => {
+            this.emptyTileHoverExit()
+        })
   
         let myDelts = new Map();
         myDelts.set('n',{x:0,y:-1})
@@ -89,10 +106,14 @@ export class Game {
                 myDelts.delete('s')
             }
         }
+
+        //for each empty neighbor
+        //create new wall tile
         for (let dir of myDelts.values()) {
             let newCoords = (myCoords.x + dir.x) + "," + (myCoords.y + dir.y)
             let wallTile = cave.addTile(newCoords)
             wallTile.setBase('wall')
+            wallTile.creatureCanFit = false
 
             let newDelts = new Map();
             newDelts.set('n',{x:0,y:-1})
@@ -106,11 +127,11 @@ export class Game {
                 
                 if (newN != undefined) {
                     wallTile.addNeighbor(newN)
-                    newN.addNeighbor(wallTile)
                 }
             }
 
-            let newTile = Sprite.from('wall')
+            let newTile = PIXI.Sprite.from('wall')
+            wallTile.sprite = newTile
             newTile.x = interactionEvent.currentTarget.x + (dir.x * 80 * this.currentScale)
             newTile.y = interactionEvent.currentTarget.y + (dir.y * 80 * this.currentScale)
             newTile.baseX = interactionEvent.currentTarget.baseX + (dir.x * 80)
@@ -125,7 +146,7 @@ export class Game {
             this.tileContainer.addChild(newTile)
 
             newTile.on("mouseup", (interactionEvent) => {
-                whenWallMined(interactionEvent, newTile, cave, this.tileContainer,newCoords)
+                this.whenWallMined(interactionEvent, newTile, cave, newCoords)
             })
         }
     }
@@ -156,9 +177,9 @@ export class Game {
 
     emptyTileHover(coords,myCave) {
 
-        if (!this.dragging && this.selected.object !== null) {
+        if (!this.dragging && this.selected.object !== null && myCave.getTile(coords).creatureFits()) {
             for (let sprite of this.floatingPaths) {
-                sprite.parent.removeChild(sprite);
+                sprite.parent.removeChild(sprite)
                 sprite.destroy()
             }
             this.floatingPaths.clear()
@@ -214,13 +235,12 @@ export class Game {
     emptyTileHoverExit() {
         if (!this.dragging && this.selected.object) {
             for (let sprite of this.floatingPaths) {
-                sprite.parent.removeChild(sprite);
+                sprite.parent.removeChild(sprite)
                 sprite.destroy()
             }
             this.floatingPaths.clear()
         }
     }
-
 
 
 }

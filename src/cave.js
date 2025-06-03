@@ -37,10 +37,11 @@ export class Cave extends Graph {
         for (let coords of this.tiles.keys()) {
             let myAsset = this.getTile(coords).getBase()
             let myTile = PIXI.Sprite.from(myAsset)
+            this.getTile(coords).sprite = myTile
     
             if (myAsset == 'wall') {
                 myTile.on("mouseup", (interactionEvent) => {
-                    this.game.whenWallMined(interactionEvent, myTile, this, container,coords)
+                    this.game.whenWallMined(interactionEvent, myTile, this, coords)
                 })
             } else {
                 myTile.on("mouseup", () => {
@@ -276,11 +277,12 @@ export class Cave extends Graph {
         //still needs to check if a building isn't overlapping
         for(let x = 0; x < building.size.x; x++) {
             for (let y = 0; y < building.size.y; y++) {
+                let theseCoords = (location.x + x) + "," + (location.y + y)
+                let curTile = this.tiles.get(theseCoords)
+                building.tileArray.push(curTile)
                 if (building.openMap[y][x] > 1) {
                     continue
                 }
-                let theseCoords = (location.x + x) + "," + (location.y + y)
-                let curTile = this.tiles.get(theseCoords)
                 curTile.setBuilt(building)
                 curTile.creatureCanFit = (building.openMap[y][x] === 1)
             }
@@ -294,6 +296,18 @@ export class Cave extends Graph {
         sprite.baseY = (this.game.midy) + (80 * location.y) + (sprite.height / 2) - 40
         sprite.interactive = true;
         sprite.buttonMode = true;
+
+        sprite.on('pointermove', (event) => {
+            let pos = event.data.global;
+
+            for (let tile of building.tileArray) {
+                let bounds = tile.sprite.getBounds()
+                if (bounds.minX < pos.x && bounds.maxX > pos.x && bounds.minY < pos.y && bounds.maxY > pos.y) {
+                    tile.sprite.emit('pointerover', event);
+                    break;
+                }
+            }
+        });
 
         this.game.tileContainer.addChild(sprite)
     }

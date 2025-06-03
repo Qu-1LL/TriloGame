@@ -147,7 +147,6 @@ async function preload()
         } else {
             //a bunch of other onclick functionality
         }
-        console.log('mouseup')
         game.dragStartPos = null;
         game.dragging = false;
     });
@@ -158,6 +157,8 @@ async function preload()
             for(let creature of cave.creatures) {
                 creature.move()
             }
+        } else if (e.key ==='Escape') {
+            game.cleanActive()
         }
     })
 

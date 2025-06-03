@@ -6,6 +6,7 @@ export class Building {
         this.name = name
         this.size = size
         this.openMap = openMap
+        this.tileArray = new Array()
     }
 
 }
