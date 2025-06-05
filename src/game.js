@@ -1,5 +1,7 @@
 import * as PIXI from 'pixi.js'
 import { toCoords } from './cave.js'
+import { Menu } from './menu.js'
+import { Ore } from './ores.js'
 
 export class Game {
 
@@ -19,14 +21,28 @@ export class Game {
         this.tileContainer.sortableChildren = true
         app.stage.addChild(this.tileContainer)
 
+        this.uiContainer = new PIXI.Container();
+        this.uiContainer.sortableChildren = true
+        app.stage.addChild(this.uiContainer)
+
         this.midx = app.screen.width / 2
         this.midy = app.screen.height / 2
 
         this.floatingPaths = new Set()
 
+        this.resources = {
+            algae: 0,
+            sandstone: 0,
+            malachite: 0,
+            magnetite: 0,
+            perotene: 0,
+            ilmenite: 0,
+            cochinium: 0
+        } 
+
 
         this.selected = new class {
-            constructor(tileContainer) {
+            constructor(tileContainer,uiContainer) {
                 this.object = null
                 this.selection = PIXI.Sprite.from('selected')
                 this.selection.x = 0
@@ -35,12 +51,18 @@ export class Game {
                 this.selection.baseY = 0
                 this.selection.visible = false
                 this.selection.anchor.set(0.5)
-                this.selection.zIndex = 10
+                this.selection.zIndex = 3
+                this.uiContainer = uiContainer
                 tileContainer.addChild(this.selection)
+                this.menu = null
             }
             setSelected(s) {
                 this.object = s
                 if (s == null) {
+                    if (this.menu !== null) {
+                        this.menu.close()
+                        this.menu = null
+                    }
                     this.selection.visible = false
                 } else {
                     this.selection.x = s.sprite.position.x
@@ -48,9 +70,12 @@ export class Game {
                     this.selection.baseX = s.sprite.baseX
                     this.selection.baseY = s.sprite.baseY
                     this.selection.visible = true
+
+                    this.menu = new Menu(app,s,this.uiContainer)
+                    this.menu.open()
                 }
             }
-        }(this.tileContainer)
+        }(this.tileContainer,this.uiContainer)
     }
 
     cleanActive() {
@@ -81,8 +106,8 @@ export class Game {
         myTile.on("mouseup", () => {
             this.emptyTileClicked(emptyCoords,cave)
         })
-        myTile.on("pointerover", () => {
-            this.emptyTileHover(emptyCoords,cave)
+        myTile.on("pointerover", (event) => {
+            this.emptyTileHover(emptyCoords,cave,event)
         })
         myTile.on("pointerout", () => {
             this.emptyTileHoverExit()
@@ -152,11 +177,6 @@ export class Game {
     }
 
     emptyTileClicked(coords,myCave) {
-        for (let sprite of this.floatingPaths) {
-                sprite.parent.removeChild(sprite);
-                sprite.destroy()
-            }
-        this.floatingPaths.clear()
 
         if (!this.dragging && this.selected.object && myCave.getTile(coords).creatureCanFit) {
 
@@ -170,21 +190,52 @@ export class Game {
             for (let i = 0; i< path.length;i++) {
                 this.selected.object.queue.enqueue(toCoords(path[i]))
             }
+            this.selected.setSelected(null)
         }
 
-        this.selected.setSelected(null)
+        if (!this.dragging) {
+            for (let sprite of this.floatingPaths) {
+                sprite.parent.removeChild(sprite);
+                sprite.destroy()
+            }
+            this.floatingPaths.clear()
+            this.selected.setSelected(null)
+        }
+
     }
 
-    emptyTileHover(coords,myCave) {
+    emptyTileHover(coords,myCave,event) {
 
-        if (!this.dragging && this.selected.object !== null && myCave.getTile(coords).creatureFits()) {
+        let pos = event.data.global
+
+        if (!this.dragging && 
+            //instead of checking for just object should check for type = creature
+            this.selected.object !== null && 
+            pos.x < (
+                this.app.screen.width - this.selected.menu.block.width
+            ) && (
+                myCave.getTile(coords).creatureFits()
+            )
+        ) {
             for (let sprite of this.floatingPaths) {
                 sprite.parent.removeChild(sprite)
                 sprite.destroy()
             }
             this.floatingPaths.clear()
 
+            let pathType = 'path'
 
+            // for (let ore in Ore.getOres()) {
+            //     if (myCave.getTile(coords).getBase() === ore.name) {
+            //         pathType = 'orepath'
+            //         break
+            //     }
+            // }
+
+            if (myCave.getTile(coords).getBase() !== 'wall' && myCave.getTile(coords).getBase() !== 'empty') {
+                    pathType = 'orepath'
+                }
+            
             let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
             let myCoords = toCoords(path.shift())
             let myDX = 0
@@ -195,15 +246,15 @@ export class Game {
                 let dy = myCoords.y - nextCoords.y
                 myDX -= dx
                 myDY -= dy
-                let nextSprite = PIXI.Sprite.from('path')
+                let nextSprite = PIXI.Sprite.from(pathType)
                 nextSprite.x = this.selected.object.sprite.x + (myDX * 80 * this.currentScale)
                 nextSprite.y = this.selected.object.sprite.y + (myDY * 80 * this.currentScale)
-                nextSprite.baseX = this.selected.object.sprite.x + (myDX * 80)
-                nextSprite.baseY = this.selected.object.sprite.y + (myDY * 80)
+                nextSprite.baseX = this.selected.object.sprite.baseX + (myDX * 80)
+                nextSprite.baseY = this.selected.object.sprite.baseY + (myDY * 80)
 
                 if (dx > 0) {
                     nextSprite.x = nextSprite.position.x + (40 * this.currentScale)
-                    nextSprite.basex += 40
+                    nextSprite.baseX += 40
                 } else if (dx < 0) {
                     nextSprite.x = nextSprite.position.x - (40 * this.currentScale)
                     nextSprite.baseX -= 40
@@ -217,7 +268,7 @@ export class Game {
                 }
 
                 nextSprite.scale.set(this.currentScale)
-                nextSprite.zIndex = 2
+                nextSprite.zIndex = 3
                 nextSprite.anchor.set(0.5)
 
                 if (dy !== 0) {

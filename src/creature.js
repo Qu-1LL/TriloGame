@@ -11,9 +11,13 @@ export class Creature {
         this.game = game
 
         sprite.on('mouseup', (interactionEvent) => {
-            if (this.game.selected.object) {
+            if (this.game.selected.object === this) {
                 this.game.selected.setSelected(null)
                 return
+            }
+
+            if (this.game.selected.object) {
+                this.game.selected.setSelected(null)
             }
             this.game.selected.setSelected(this)
         })
@@ -23,7 +27,7 @@ export class Creature {
 
         let next = this.queue.peek()
 
-        //if creature can successfully do next
+        //shmupdate: if creature can successfully do next
 
         next = this.queue.dequeue()
 

@@ -10,7 +10,7 @@ const app = new PIXI.Application();
 async function setup()
 {
     // Intialize the application.
-    await app.init({ background: '#000000', height: window.innerHeight-21, width: window.innerWidth-16 });
+    await app.init({ background: '#000000', height: window.innerHeight-5, width: window.innerWidth });
 
     // Then adding the application's canvas to the DOM body.
     document.body.appendChild(app.canvas);
@@ -34,7 +34,10 @@ async function preload()
         { alias: 'Trilobite', src: `${base}assets/Trilobite.png` },
         { alias: 'Queen', src: `${base}assets/Queen.png` },
         { alias: 'path', src: `${base}assets/Path.png` },
-        { alias: 'selected', src: `${base}assets/Selected.png` }
+        { alias: 'orepath', src: `${base}assets/OrePath.png` },
+        { alias: 'selected', src: `${base}assets/Selected.png` },
+        { alias: 'menu', src: `${base}assets/MenuBlock.png` },
+        {alias: 'window_5x4', src: `${base}assets/window_5x4.png` }
     ];
 
     // Load the assets defined above.
@@ -73,7 +76,7 @@ async function preload()
         if (game.dragging) {
             return
         }
-        if (event.deltaY > 0) {
+        if (event.deltaY < 0) {
             if (game.currentScale < 2.5) {
                 game.currentScale = game.currentScale * (4 / 3)
             } else {

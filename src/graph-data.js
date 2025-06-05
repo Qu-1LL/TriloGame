@@ -40,6 +40,10 @@ export class Tile {
         return this.creatureCanFit
     }
 
+    getBuilt() {
+        return this.holding.get('built')
+    }
+
     canBuild() {
         return this.holding.get('base') == 'empty' && this.holding.get('built') == 'none'
     }

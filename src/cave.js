@@ -47,8 +47,8 @@ export class Cave extends Graph {
                 myTile.on("mouseup", () => {
                     this.game.emptyTileClicked(coords,this)
                 })
-                myTile.on("pointerover", () => {
-                    this.game.emptyTileHover(coords,this)
+                myTile.on("pointerover", (event) => {
+                    this.game.emptyTileHover(coords,this,event)
                 })
                 myTile.on("pointerout", () => {
                     this.game.emptyTileHoverExit()
@@ -185,7 +185,6 @@ export class Cave extends Graph {
             let dumbY = Math.floor(Math.random() * 17) - 8
             if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
                 this.getTile(dumbX+","+dumbY).setBase('Sandstone')
-                this.getTile(dumbX+","+dumbY).creatureCanFit = false
                 dumbSuccess = false
             }
         }
@@ -195,7 +194,6 @@ export class Cave extends Graph {
             let dumbY = Math.floor(Math.random() * 13) - 6
             if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
                 this.getTile(dumbX+","+dumbY).setBase('Algae')
-                this.getTile(dumbX+","+dumbY).creatureCanFit = false
                 dumbSuccess = false
             }
         }
@@ -211,7 +209,6 @@ export class Cave extends Graph {
                 let myVect = getDistance(myCoords.x,myCoords.y,0,0) 
                 if ( myVect > myLower && myVect < myUpper && tile.getBase() == 'empty') {
                     tile.setBase(ore.name)
-                    tile.creatureCanFit = false
                     let veinCount = 0
                     let myNum = Math.random()
                     while(myNum < 0.85 && veinCount <= 2 + (Ore.getOres().length - oreCount)) {
@@ -223,7 +220,6 @@ export class Cave extends Graph {
                         }
                         if (brokenCount < 4) {
                             n.setBase(ore.name)
-                            n.creatureCanFit = false
                         }
                         myNum = Math.random()
                         veinCount++
@@ -296,6 +292,7 @@ export class Cave extends Graph {
         sprite.baseY = (this.game.midy) + (80 * location.y) + (sprite.height / 2) - 40
         sprite.interactive = true;
         sprite.buttonMode = true;
+        sprite.zIndex = 1
 
         sprite.on('pointermove', (event) => {
             let pos = event.data.global;
@@ -309,12 +306,36 @@ export class Cave extends Graph {
             }
         });
 
+        sprite.on('mouseup', (event) => {
+            let pos = event.data.global;
+
+            for (let tile of building.tileArray) {
+                let bounds = tile.sprite.getBounds()
+                if (bounds.minX < pos.x && bounds.maxX > pos.x && bounds.minY < pos.y && bounds.maxY > pos.y) {
+                    tile.sprite.emit('mouseup', event);
+                    break;
+                }
+            }
+        });
+
+        sprite.on('pointerout', (event) => {
+            let pos = event.data.global;
+
+            for (let tile of building.tileArray) {
+                let bounds = tile.sprite.getBounds()
+                if (bounds.minX < pos.x && bounds.maxX > pos.x && bounds.minY < pos.y && bounds.maxY > pos.y) {
+                    tile.sprite.emit('pointerout', event);
+                    break;
+                }
+            }
+        });
+
         this.game.tileContainer.addChild(sprite)
     }
 
     spawn(creature) {
 
-        if (!this.getTile((creature.location.x+","+creature.location.y)).creatureFits()) {
+        if (!this.getTile((creature.location.x+","+creature.location.y)).getBase() == 'empty') {
             return
         }
 
@@ -325,7 +346,7 @@ export class Cave extends Graph {
         creature.sprite.baseY = (this.game.midy) + (80 * creature.location.y)
         creature.sprite.interactive = true;
         creature.sprite.buttonMode = true;
-        creature.sprite.zIndex = 1
+        creature.sprite.zIndex = 2
 
         this.game.tileContainer.addChild(creature.sprite)
 
