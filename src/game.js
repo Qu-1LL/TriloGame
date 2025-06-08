@@ -42,7 +42,7 @@ export class Game {
 
 
         this.selected = new class {
-            constructor(tileContainer,uiContainer) {
+            constructor(tileContainer,uiContainer,game) {
                 this.object = null
                 this.selection = PIXI.Sprite.from('selected')
                 this.selection.x = 0
@@ -53,8 +53,10 @@ export class Game {
                 this.selection.anchor.set(0.5)
                 this.selection.zIndex = 3
                 this.uiContainer = uiContainer
+                this.tileContainer = tileContainer
                 tileContainer.addChild(this.selection)
                 this.menu = null
+                this.game = game
             }
             setSelected(s) {
                 this.object = s
@@ -71,11 +73,27 @@ export class Game {
                     this.selection.baseY = s.sprite.baseY
                     this.selection.visible = true
 
+                    this.centerSelection()
+
                     this.menu = new Menu(app,s,this.uiContainer)
                     this.menu.open()
                 }
             }
-        }(this.tileContainer,this.uiContainer)
+            centerSelection() {
+                console.log(this.game.totalXDelt+","+this.game.totalYDelt)
+                let dx = (this.object.location.x * 80) - this.game.totalXDelt
+                let dy = (this.object.location.y * 80) - this.game.totalYDelt
+                this.game.totalXDelt += dx
+                this.game.totalYDelt += dy
+                for (let child of this.tileContainer.children) {
+                    child.baseX = child.baseX - dx
+                    child.baseY = child.baseY - dy
+                    child.x = child.position.x - (dx * this.game.currentScale)
+                    child.y = child.position.y - (dy * this.game.currentScale)
+                }
+                console.log(this.game.totalXDelt+","+this.game.totalYDelt)
+            }
+        }(this.tileContainer,this.uiContainer,this)
     }
 
     cleanActive() {

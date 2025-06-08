@@ -137,15 +137,16 @@ async function preload()
                 y: e.clientY - rect.top
             };
 
-            let dx = pos.x - game.dragStartPos.x;
-            let dy = pos.y - game.dragStartPos.y;
+            let dx = (pos.x - game.dragStartPos.x) * (1 / game.currentScale);
+            let dy = (pos.y - game.dragStartPos.y) * (1 / game.currentScale);
 
-            game.totalXDelt += dx
-            game.totalYDelt += dy
+            game.totalXDelt -= dx
+            game.totalYDelt -= dy
+            console.log(game.totalXDelt+","+game.totalYDelt)
             
             for (let child of game.tileContainer.children) {
-                child.baseX = child.baseX + (dx * (1/game.currentScale))
-                child.baseY = child.baseY + (dy * (1/game.currentScale))
+                child.baseX = child.baseX + dx
+                child.baseY = child.baseY + dy
             }
         } else {
             //a bunch of other onclick functionality
