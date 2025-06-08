@@ -20,6 +20,7 @@ export class Creature {
                 this.game.selected.setSelected(null)
             }
             this.game.selected.setSelected(this)
+            this.game.movePath = false
         })
     }
 

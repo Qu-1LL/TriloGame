@@ -257,6 +257,9 @@ export class Cave extends Graph {
             for (let y = 0; y < building.size.y; y++) {
                 let theseCoords = (location.x + x) + "," + (location.y + y)
                 let curTile = this.tiles.get(theseCoords)
+                if (curTile === undefined) {
+                    return false
+                }
                 if (curTile.getBuilt() !== 'none' || curTile.getBase() !== 'empty' || !curTile.creatureFits()) {
                     return false
                 }
@@ -267,7 +270,7 @@ export class Cave extends Graph {
 
     build(building,location,sprite) {
         if (!this.canBuild(building,location)) {
-            return
+            return false
         }
         this.buildings.add(building)
         //still needs to check if a building isn't overlapping
@@ -331,12 +334,14 @@ export class Cave extends Graph {
         });
 
         this.game.tileContainer.addChild(sprite)
+
+        return true
     }
 
     spawn(creature,tile) {
 
         if (tile.getBase() == 'wall' || !tile.creatureFits()) {
-            return
+            return false
         }
 
         creature.sprite.anchor.set(0.5)
@@ -351,6 +356,8 @@ export class Cave extends Graph {
         this.game.tileContainer.addChild(creature.sprite)
 
         this.creatures.add(creature)
+
+        return true
     }
 
     bfsPath(startKey, goalKey) {

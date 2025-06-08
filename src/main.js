@@ -58,19 +58,25 @@ async function preload()
     const cave = new Cave(app,game);
     
     let queen = new Building('Queen',{x:3,y:3},[[1,1,1],[1,0,1],[1,1,1]])
-    cave.build(queen,{x:-1,y:-1},PIXI.Sprite.from('Queen'))
+    var spawnX = Math.floor((Math.random() * 20) - 10)
+    var spawnY = Math.floor((Math.random() * 20) - 10)
 
-    let trilo = new Creature('Jeffery',{x:1,y:-1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo,cave.getTile('1,-1'))
+    while(!cave.build(queen,{x:spawnX,y:spawnY},PIXI.Sprite.from('Queen'))) {
+        spawnX = Math.floor((Math.random() * 20) - 10)
+        spawnY = Math.floor((Math.random() * 20) - 10)
+    }
 
-    trilo = new Creature('Quinton',{x:1,y:1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo,cave.getTile('1,1'))
+    let trilo = new Creature('Jeffery',{x:spawnX+2,y:spawnY},PIXI.Sprite.from('Trilobite'),game)
+    cave.spawn(trilo,cave.getTile((spawnX+2)+','+spawnY))
 
-    trilo = new Creature('Yeetmuncher',{x:-1,y:-1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo,cave.getTile('-1,-1'))
+    trilo = new Creature('Quinton',{x:spawnX+2,y:spawnY+2},PIXI.Sprite.from('Trilobite'),game)
+    cave.spawn(trilo,cave.getTile((spawnX+2)+','+(spawnY+2)))
 
-    trilo = new Creature('Sigma',{x:-1,y:1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo,cave.getTile('-1,1'))
+    trilo = new Creature('Yeetmuncher',{x:spawnX,y:spawnY},PIXI.Sprite.from('Trilobite'),game)
+    cave.spawn(trilo,cave.getTile(spawnX+','+spawnY))
+
+    trilo = new Creature('Sigma',{x:spawnX,y:spawnY+2},PIXI.Sprite.from('Trilobite'),game)
+    cave.spawn(trilo,cave.getTile(spawnX+','+(spawnY+2)))
 
     //event listeners relative to full game
 
