@@ -257,7 +257,7 @@ export class Cave extends Graph {
             for (let y = 0; y < building.size.y; y++) {
                 let theseCoords = (location.x + x) + "," + (location.y + y)
                 let curTile = this.tiles.get(theseCoords)
-                if (curTile.getBase() !== 'empty') {
+                if (curTile.getBuilt() !== 'none' || curTile.getBase() !== 'empty' || !curTile.creatureFits()) {
                     return false
                 }
             }
@@ -333,9 +333,9 @@ export class Cave extends Graph {
         this.game.tileContainer.addChild(sprite)
     }
 
-    spawn(creature) {
+    spawn(creature,tile) {
 
-        if (!this.getTile((creature.location.x+","+creature.location.y)).getBase() == 'empty') {
+        if (tile.getBase() == 'wall' || !tile.creatureFits()) {
             return
         }
 

@@ -11,6 +11,7 @@ export class Game {
 
         this.dragging = false;
         this.dragStartPos = null;
+        this.movePath = false
 
         this.totalXDelt = 0
         this.totalYDelt = 0
@@ -64,6 +65,7 @@ export class Game {
                     if (this.menu !== null) {
                         this.menu.close()
                         this.menu = null
+
                     }
                     this.selection.visible = false
                 } else {
@@ -80,7 +82,6 @@ export class Game {
                 }
             }
             centerSelection() {
-                console.log(this.game.totalXDelt+","+this.game.totalYDelt)
                 let dx = (this.object.location.x * 80) - this.game.totalXDelt
                 let dy = (this.object.location.y * 80) - this.game.totalYDelt
                 this.game.totalXDelt += dx
@@ -91,7 +92,6 @@ export class Game {
                     child.x = child.position.x - (dx * this.game.currentScale)
                     child.y = child.position.y - (dy * this.game.currentScale)
                 }
-                console.log(this.game.totalXDelt+","+this.game.totalYDelt)
             }
         }(this.tileContainer,this.uiContainer,this)
     }
@@ -102,6 +102,7 @@ export class Game {
             sprite.destroy()
         }
         this.floatingPaths.clear()
+        this.movePath = false
         this.selected.setSelected(null)
         
     }
@@ -196,7 +197,7 @@ export class Game {
 
     emptyTileClicked(coords,myCave) {
 
-        if (!this.dragging && this.selected.object && myCave.getTile(coords).creatureCanFit) {
+        if (!this.dragging && this.movePath && myCave.getTile(coords).creatureCanFit) {
 
             let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
             if(!path) {
@@ -217,6 +218,7 @@ export class Game {
                 sprite.destroy()
             }
             this.floatingPaths.clear()
+            this.movePath = false
             this.selected.setSelected(null)
         }
 
@@ -227,8 +229,7 @@ export class Game {
         let pos = event.data.global
 
         if (!this.dragging && 
-            //instead of checking for just object should check for type = creature
-            this.selected.object !== null && 
+            this.movePath &&
             pos.x < (
                 this.app.screen.width - this.selected.menu.block.width
             ) && (

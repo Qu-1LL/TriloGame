@@ -37,7 +37,9 @@ async function preload()
         { alias: 'orepath', src: `${base}assets/OrePath.png` },
         { alias: 'selected', src: `${base}assets/Selected.png` },
         { alias: 'menu', src: `${base}assets/MenuBlock.png` },
-        {alias: 'window_5x4', src: `${base}assets/window_5x4.png` }
+        {alias: 'window_5x4', src: `${base}assets/window_5x4.png` },
+        {alias: 'window_4x1', src: `${base}assets/window_4x1.png` },
+        {alias: 'window_3x1', src: `${base}assets/window_3x1.png` }
     ];
 
     // Load the assets defined above.
@@ -59,16 +61,16 @@ async function preload()
     cave.build(queen,{x:-1,y:-1},PIXI.Sprite.from('Queen'))
 
     let trilo = new Creature('Jeffery',{x:1,y:-1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo)
+    cave.spawn(trilo,cave.getTile('1,-1'))
 
     trilo = new Creature('Quinton',{x:1,y:1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo)
+    cave.spawn(trilo,cave.getTile('1,1'))
 
     trilo = new Creature('Yeetmuncher',{x:-1,y:-1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo)
+    cave.spawn(trilo,cave.getTile('-1,-1'))
 
     trilo = new Creature('Sigma',{x:-1,y:1},PIXI.Sprite.from('Trilobite'),game)
-    cave.spawn(trilo)
+    cave.spawn(trilo,cave.getTile('-1,1'))
 
     //event listeners relative to full game
 
