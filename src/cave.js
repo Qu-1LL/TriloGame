@@ -376,7 +376,7 @@ export class Cave extends Graph {
                 let path = [];
                 let k = goalKey;
                 while (k !== undefined) {
-                    path.push(k);
+                    path.push(toCoords(k));
                     k = cameFrom.get(k);
                 }
                 path.reverse();

@@ -7,15 +7,16 @@ import { toCoords } from './cave.js'
 export class Menu {
 
     constructor(app,object,container) {
+        this.app = app
         this.block = PIXI.Sprite.from('menu')
         this.scale = app.screen.height / this.block.height
         this.block.scale.set(this.scale)
         this.block.x = app.screen.width - this.block.width
         this.block.y = 0
         this.block.visible = false
+        this.block.interactive = true
         this.block.zIndex = 0
         this.container = container
-        this.container.addChild(this.block)
         this.game = object.game
 
         this.object = object
@@ -42,10 +43,12 @@ export class Menu {
 
     open() {
         this.block.visible = true
+        this.container.addChild(this.block)
     }
 
     close() {
         this.block.visible = false
+        this.container.removeChild(this.block)
         for (let sprite of [...this.container.children]) {
             this.container.removeChild(sprite)
             sprite.visible = false
@@ -66,7 +69,7 @@ export class Menu {
         //shmupdate: grab creature type from creature object
         let creatureType = 'Trilo'
 
-        let title = new PIXI.Text({text: this.object.name+' the '+creatureType, style})
+        let title = new PIXI.Text({text: this.object.name+' the '+creatureType, style: style})
         title.anchor.set(0.5)
         title.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2)
         title.y = this.bounds.minY + (title.height / 2)
@@ -88,14 +91,14 @@ export class Menu {
 
         let myX = this.object.location.x
         
-        let coordsX = new PIXI.Text({text: 'x: '+myX,style })
+        let coordsX = new PIXI.Text({text: 'x: '+myX,style: style })
         coordsX.x = this.bounds.maxX - coordsWin.width - (5 * this.scale)
         coordsX.y = coordsWin.position.y + (10 * this.scale)
         coordsX.zIndex = 2
 
         let myY = -this.object.location.y
         
-        let coordsY = new PIXI.Text({text: 'y: '+myY,style })
+        let coordsY = new PIXI.Text({text: 'y: '+myY,style: style })
         coordsY.x = this.bounds.maxX - coordsWin.width - (5 * this.scale)
         coordsY.y = coordsWin.position.y + (45 * this.scale)
         coordsY.zIndex = 2
@@ -114,13 +117,18 @@ export class Menu {
         moveButton.scale.set(this.scale * 0.6)
         moveButton.interactive = true
         moveButton.buttonMode = true
-        let moveText = new PIXI.Text({text: 'Move',style })
+        let moveText = new PIXI.Text({text: 'Move',style: style })
         moveText.x = moveButton.position.x + (15 * this.scale)
         moveText.y = moveButton.position.y + (7 * this.scale)
         moveText.zIndex = 2
 
         moveButton.on('mouseup',(e) => {
             this.game.movePath = true
+            for (let sprite of this.game.selected.selectedPaths) {
+                sprite.parent.removeChild(sprite)
+                sprite.destroy()
+            }
+            this.game.selected.selectedPaths.clear()
         })
         
         let buildButton = PIXI.Sprite.from('window_4x1')
@@ -129,16 +137,17 @@ export class Menu {
         buildButton.zIndex = 1
         buildButton.scale.set(this.scale * 0.6)
         buildButton.interactive = true
-        moveButton.buttonMode = true
-        let buildText = new PIXI.Text({text: 'Build',style })
+        buildButton.buttonMode = true
+        let buildText = new PIXI.Text({text: 'Build',style: style })
         buildText.x = buildButton.position.x + (15 * this.scale)
         buildText.y = buildButton.position.y + (7 * this.scale)
         buildText.zIndex = 2
 
         buildButton.on('mouseup',(e) => {
-            //open buildingOptions menu based on creature 
-            //check to see what it can build and throw options together
-            //run close and open then buildingOptionsMenu
+            this.close()
+            this.open()
+            this.buildOptionsMenu()
+            this.game.movePath = false
         })
 
         let mineButton = PIXI.Sprite.from('window_4x1')
@@ -147,11 +156,15 @@ export class Menu {
         mineButton.zIndex = 1
         mineButton.scale.set(this.scale * 0.6)
         mineButton.interactive = true
-        moveButton.buttonMode = true
-        let mineText = new PIXI.Text({text: 'Mine',style })
+        mineButton.buttonMode = true
+        let mineText = new PIXI.Text({text: 'Mine',style: style })
         mineText.x = mineButton.position.x + (15 * this.scale)
         mineText.y = mineButton.position.y + (7 * this.scale)
         mineText.zIndex = 2
+
+        //function should search the creature's four adjacent tiles for 
+        //creature doesn't fit + holding building to see if it can do 
+        //any actions unique to a building
 
         this.container.addChild(title)
 
@@ -167,8 +180,98 @@ export class Menu {
         this.container.addChild(mineText)
     }
 
-    buildOptionsMenu(creature) {
+    buildOptionsMenu() {
+        let buildings = this.object.getBuildable()
 
+        let style = new PIXI.TextStyle({
+            fontFamily: 'Verdana',
+            fontSize: 36 * this.scale,
+            stroke: '#000000',
+            wordWrap: true,
+            wordWrapWidth: 440
+        });
+
+        let title = new PIXI.Text({text: 'Buildings', style: style})
+        title.anchor.set(0.5)
+        title.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2)
+        title.y = this.bounds.minY + (title.height / 2)
+        title.zIndex = 1
+
+        style = new PIXI.TextStyle({
+            fontFamily: 'Verdana',
+            fontSize: 24 * this.scale,
+            stroke: '#000000',
+            wordWrap: true,
+            wordWrapWidth: 440
+        });
+
+        this.container.addChild(title)
+
+        let marginAccumulate = 10 * this.scale
+
+        let hoverContainer = new PIXI.Container()
+        hoverContainer.sortableChidlren = true
+        this.container.addChild(hoverContainer)
+        hoverContainer.zIndex = 1
+
+        for (let building of buildings) {
+            let myButton = PIXI.Sprite.from('window_4x1')
+            myButton.x = this.bounds.minX + (10 * this.scale)
+            myButton.y = this.bounds.minY + title.height + marginAccumulate
+            myButton.zIndex = 1
+            myButton.scale.set(this.scale * 0.6)
+            myButton.interactive = true
+            myButton.buttonMode = true
+            let myText = new PIXI.Text({text: building.name, style: style})
+            myText.x = myButton.position.x + (15 * this.scale)
+            myText.y = myButton.position.y + (7 * this.scale)
+            myText.zIndex = 2
+
+            this.container.addChild(myButton)
+            this.container.addChild(myText)
+
+            myButton.on('pointerover', (event) => {
+                let mySprite = PIXI.Sprite.from(building.sprite.texture)
+                mySprite.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2) + (10 * this.scale)
+                mySprite.y = this.bounds.minY + title.height + (10 * this.scale)
+                mySprite.zIndex = 1
+                mySprite.scale.set((this.bounds.maxX - mySprite.x) / mySprite.width)
+                
+                let infoStyle = new PIXI.TextStyle({
+                    fontFamily: 'Courier New',
+                    fontSize: 20 * this.scale,
+                    stroke: '#000000',
+                    wordWrap: true,
+                    wordWrapWidth: 200,//this.bounds.maxX - mySprite.x,
+                    padding: 0,
+                    align: 'center'
+                });
+
+                let myInfo = new PIXI.Text({
+                    text: building.size.x+" x "+ building.size.y+"\n"+building.description,
+                    style: infoStyle
+                })
+
+                console.log(myInfo.width)
+                myInfo.x = mySprite.x
+                myInfo.y = mySprite.y + mySprite.height + (10 * this.scale)
+                myInfo.zIndex = 1
+
+                hoverContainer.addChild(mySprite)
+                hoverContainer.addChild(myInfo)
+            })
+            myButton.on("pointerout", (event) => {
+                for(let child of [...hoverContainer.children]) {
+                    child.parent.removeChild(child)
+                    child.destroy()
+                }
+            })
+            myButton.on('mouseup', (event => {
+                //initiate build sequence
+            }))
+
+            marginAccumulate += (myButton.height + (10 * this.scale))
+        }
     }
 
     buildingMenu() {

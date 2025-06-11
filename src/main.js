@@ -32,14 +32,23 @@ async function preload()
         { alias: 'Ilmenite', src: `${base}assets/IlmeniteTile.png` },
         { alias: 'Cochinium', src: `${base}assets/CochiniumTile.png` },
         { alias: 'Trilobite', src: `${base}assets/Trilobite.png` },
+
+        { alias: 'Scaffold', src: `${base}assets/Scaffold.png` },
         { alias: 'Queen', src: `${base}assets/Queen.png` },
+        { alias: 'Algae Farm', src: `${base}assets/AlgaeFarm.png` },
+        { alias: 'Storage', src: `${base}assets/Storage.png` },
+        { alias: 'Smith', src: `${base}assets/Smith.png` },
+
         { alias: 'path', src: `${base}assets/Path.png` },
         { alias: 'orepath', src: `${base}assets/OrePath.png` },
         { alias: 'selected', src: `${base}assets/Selected.png` },
+        { alias: 'selectededge', src: `${base}assets/SelectedEdge.png` },
+
         { alias: 'menu', src: `${base}assets/MenuBlock.png` },
-        {alias: 'window_5x4', src: `${base}assets/window_5x4.png` },
-        {alias: 'window_4x1', src: `${base}assets/window_4x1.png` },
-        {alias: 'window_3x1', src: `${base}assets/window_3x1.png` }
+        { alias: 'window_5x4', src: `${base}assets/window_5x4.png` },
+        { alias: 'window_4x1', src: `${base}assets/window_4x1.png` },
+        { alias: 'window_3x1', src: `${base}assets/window_3x1.png` }
+        
     ];
 
     // Load the assets defined above.
@@ -78,6 +87,16 @@ async function preload()
     trilo = new Creature('Sigma',{x:spawnX,y:spawnY+2},PIXI.Sprite.from('Trilobite'),game)
     cave.spawn(trilo,cave.getTile(spawnX+','+(spawnY+2)))
 
+    game.totalXDelt = spawnX * 80 + 80
+    game.totalYDelt = spawnY * 80 + 80
+
+    for (let child of game.tileContainer.children) {
+        child.baseX = child.baseX - game.totalXDelt
+        child.baseY = child.baseY - game.totalYDelt
+        child.x = child.position.x - game.totalXDelt
+        child.y = child.position.y - game.totalYDelt
+    }
+
     //event listeners relative to full game
 
     window.addEventListener("wheel", (event) => {
@@ -91,7 +110,7 @@ async function preload()
                 return
             }
         } else {
-            if (game.currentScale > 0.07) {
+            if (game.currentScale > 0.1) {
                 game.currentScale = game.currentScale * 0.75
             } else {
                 return
@@ -166,6 +185,7 @@ async function preload()
     window.addEventListener('keydown', (e) => {
         if (e.key ==='Enter') {
             console.log('Enter pressed')
+            game.cleanActive()
             for(let creature of cave.creatures) {
                 creature.move()
             }

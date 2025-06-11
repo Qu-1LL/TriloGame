@@ -2,12 +2,16 @@ import * as PIXI from 'pixi.js'
 import { toCoords } from './cave.js'
 import { Menu } from './menu.js'
 import { Ore } from './ores.js'
+import { Creature } from './creature.js'
+import * as BUILD from './building.js'
 
 export class Game {
 
     constructor(app) {
         this.app = app
         this.currentScale = 1
+
+        //event variables
 
         this.dragging = false;
         this.dragStartPos = null;
@@ -17,6 +21,7 @@ export class Game {
         this.totalYDelt = 0
         
         //setting up stage
+        //UI variables
         
         this.tileContainer = new PIXI.Container();
         this.tileContainer.sortableChildren = true
@@ -31,6 +36,10 @@ export class Game {
 
         this.floatingPaths = new Set()
 
+        this.floatingBuilding = null
+
+        //practical variables
+
         this.resources = {
             algae: 0,
             sandstone: 0,
@@ -40,6 +49,12 @@ export class Game {
             ilmenite: 0,
             cochinium: 0
         } 
+
+        this.unlockedBuildings = [
+            new BUILD.Factory(BUILD.AlgaeFarm,this),
+            new BUILD.Factory(BUILD.Storage,this),
+            new BUILD.Factory(BUILD.Smith,this)
+        ]
 
 
         this.selected = new class {
@@ -58,6 +73,7 @@ export class Game {
                 tileContainer.addChild(this.selection)
                 this.menu = null
                 this.game = game
+                this.selectedPaths = new Set()
             }
             setSelected(s) {
                 this.object = s
@@ -68,6 +84,11 @@ export class Game {
 
                     }
                     this.selection.visible = false
+                    for (let sprite of this.selectedPaths) {
+                        sprite.parent.removeChild(sprite)
+                        sprite.destroy()
+                    }
+                    this.selectedPaths.clear()
                 } else {
                     this.selection.x = s.sprite.position.x
                     this.selection.y = s.sprite.position.y
@@ -75,14 +96,24 @@ export class Game {
                     this.selection.baseY = s.sprite.baseY
                     this.selection.visible = true
 
-                    this.centerSelection()
-
                     this.menu = new Menu(app,s,this.uiContainer)
                     this.menu.open()
+
+                    this.centerSelection()
+
+                    if (this.object instanceof Creature) {
+                        if (this.object.queue.peek()) {
+                            let myPath = [...this.object.queue.toArray()]
+                            myPath.unshift(this.object.location)
+                            this.game.displayPath(myPath,this.selectedPaths)
+                        }
+                    }
                 }
             }
             centerSelection() {
-                let dx = (this.object.location.x * 80) - this.game.totalXDelt
+                let menuOffset = this.menu.block.width / 2
+
+                let dx = (this.object.location.x * 80) - (this.game.totalXDelt - menuOffset)
                 let dy = (this.object.location.y * 80) - this.game.totalYDelt
                 this.game.totalXDelt += dx
                 this.game.totalYDelt += dy
@@ -207,7 +238,7 @@ export class Game {
             path.shift()
             this.selected.object.queue.clear()
             for (let i = 0; i< path.length;i++) {
-                this.selected.object.queue.enqueue(toCoords(path[i]))
+                this.selected.object.queue.enqueue(path[i])
             }
             this.selected.setSelected(null)
         }
@@ -242,63 +273,61 @@ export class Game {
             }
             this.floatingPaths.clear()
 
-            let pathType = 'path'
-
             // for (let ore in Ore.getOres()) {
             //     if (myCave.getTile(coords).getBase() === ore.name) {
             //         pathType = 'orepath'
             //         break
             //     }
             // }
-
-            if (myCave.getTile(coords).getBase() !== 'wall' && myCave.getTile(coords).getBase() !== 'empty') {
-                    pathType = 'orepath'
-                }
             
             let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
-            let myCoords = toCoords(path.shift())
-            let myDX = 0
-            let myDY = 0
-            while(path.length > 0) {
-                let nextCoords = toCoords(path[0])
-                let dx = myCoords.x - nextCoords.x
-                let dy = myCoords.y - nextCoords.y
-                myDX -= dx
-                myDY -= dy
-                let nextSprite = PIXI.Sprite.from(pathType)
-                nextSprite.x = this.selected.object.sprite.x + (myDX * 80 * this.currentScale)
-                nextSprite.y = this.selected.object.sprite.y + (myDY * 80 * this.currentScale)
-                nextSprite.baseX = this.selected.object.sprite.baseX + (myDX * 80)
-                nextSprite.baseY = this.selected.object.sprite.baseY + (myDY * 80)
+            this.displayPath(path,this.floatingPaths)
+        }
+    }
 
-                if (dx > 0) {
-                    nextSprite.x = nextSprite.position.x + (40 * this.currentScale)
-                    nextSprite.baseX += 40
-                } else if (dx < 0) {
-                    nextSprite.x = nextSprite.position.x - (40 * this.currentScale)
-                    nextSprite.baseX -= 40
-                }
-                if (dy > 0) {
-                    nextSprite.y = nextSprite.position.y + (40 * this.currentScale)
-                    nextSprite.baseY += 40
-                } else if (dy < 0) {
-                    nextSprite.y = nextSprite.position.y - (40 * this.currentScale)
-                    nextSprite.baseY -= 40
-                }
+    displayPath(path,pathSet) {
+        let myCoords = path.shift()
+        let myDX = 0
+        let myDY = 0
+        while(path.length > 0) {
+            let nextCoords = path[0]
+            let dx = myCoords.x - nextCoords.x
+            let dy = myCoords.y - nextCoords.y
+            myDX -= dx
+            myDY -= dy
+            let nextSprite = PIXI.Sprite.from('path')
+            nextSprite.x = this.selected.object.sprite.x + (myDX * 80 * this.currentScale)
+            nextSprite.y = this.selected.object.sprite.y + (myDY * 80 * this.currentScale)
+            nextSprite.baseX = this.selected.object.sprite.baseX + (myDX * 80)
+            nextSprite.baseY = this.selected.object.sprite.baseY + (myDY * 80)
 
-                nextSprite.scale.set(this.currentScale)
-                nextSprite.zIndex = 3
-                nextSprite.anchor.set(0.5)
-
-                if (dy !== 0) {
-                    nextSprite.rotation = Math.PI / 2
-                }
-
-                this.tileContainer.addChild(nextSprite)
-                this.floatingPaths.add(nextSprite)
-
-                myCoords = toCoords(path.shift())
+            if (dx > 0) {
+                nextSprite.x = nextSprite.position.x + (40 * this.currentScale)
+                nextSprite.baseX += 40
+            } else if (dx < 0) {
+                nextSprite.x = nextSprite.position.x - (40 * this.currentScale)
+                nextSprite.baseX -= 40
             }
+            if (dy > 0) {
+                nextSprite.y = nextSprite.position.y + (40 * this.currentScale)
+                nextSprite.baseY += 40
+            } else if (dy < 0) {
+                nextSprite.y = nextSprite.position.y - (40 * this.currentScale)
+                nextSprite.baseY -= 40
+            }
+
+            nextSprite.scale.set(this.currentScale)
+            nextSprite.zIndex = 3
+            nextSprite.anchor.set(0.5)
+
+            if (dy !== 0) {
+                nextSprite.rotation = Math.PI / 2
+            }
+
+            this.tileContainer.addChild(nextSprite)
+            pathSet.add(nextSprite)
+
+            myCoords = path.shift()
         }
     }
 

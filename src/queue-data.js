@@ -53,4 +53,14 @@ export class NodeQueue {
         this.rear = null
         this.length = 0
     }
+
+    toArray() {
+        var result = [];
+        let current = this.front;
+        while (current) {
+            result.push(current.value);
+            current = current.next;
+        }
+        return result;
+    }
 }

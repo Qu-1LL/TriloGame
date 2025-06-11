@@ -63,4 +63,10 @@ export class Creature {
             return next
         }
     }
+
+    getBuildable() {
+        let myBuildings = [...this.game.unlockedBuildings]
+        //if creature can build special buildings, add those here
+        return myBuildings
+    }
 }
