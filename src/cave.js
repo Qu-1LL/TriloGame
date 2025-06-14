@@ -197,6 +197,15 @@ export class Cave extends Graph {
                 dumbSuccess = false
             }
         }
+        dumbSuccess = true
+        while (dumbSuccess) {
+            let dumbX = Math.floor(Math.random() * 13) - 6
+            let dumbY = Math.floor(Math.random() * 13) - 6
+            if (this.getTile(dumbX+","+dumbY) && this.getTile(dumbX+","+dumbY).getBase() == 'empty') {
+                this.getTile(dumbX+","+dumbY).setBase('Magnetite')
+                dumbSuccess = false
+            }
+        }
 
         let oreCount = 0;
         for(let ore of Ore.getOres()) {

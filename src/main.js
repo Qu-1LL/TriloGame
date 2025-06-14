@@ -47,7 +47,8 @@ async function preload()
         { alias: 'menu', src: `${base}assets/MenuBlock.png` },
         { alias: 'window_5x4', src: `${base}assets/window_5x4.png` },
         { alias: 'window_4x1', src: `${base}assets/window_4x1.png` },
-        { alias: 'window_3x1', src: `${base}assets/window_3x1.png` }
+        { alias: 'window_3x1', src: `${base}assets/window_3x1.png` },
+        { alias: 'back', src: `${base}assets/BackArrow.png` }
         
     ];
 
