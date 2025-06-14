@@ -16,6 +16,7 @@ export class Game {
         this.dragging = false;
         this.dragStartPos = null;
         this.movePath = false
+        this.buildMode = false
 
         this.totalXDelt = 0
         this.totalYDelt = 0
@@ -36,7 +37,10 @@ export class Game {
 
         this.floatingPaths = new Set()
 
-        this.floatingBuilding = null
+        this.floatingBuilding = {
+            building: null,
+            sprite: null
+        }
 
         //practical variables
 
@@ -113,7 +117,7 @@ export class Game {
             centerSelection() {
                 let menuOffset = this.menu.block.width / 2
 
-                let dx = (this.object.location.x * 80) - (this.game.totalXDelt - menuOffset)
+                let dx = (this.object.location.x * 80) - (this.game.totalXDelt - (menuOffset * (1 / this.game.currentScale)))
                 let dy = (this.object.location.y * 80) - this.game.totalYDelt
                 this.game.totalXDelt += dx
                 this.game.totalYDelt += dy
@@ -134,19 +138,20 @@ export class Game {
         }
         this.floatingPaths.clear()
         this.movePath = false
+        this.buildMode = false
+        this.floatingBuilding.building = null
+        this.tileContainer.removeChild(this.floatingBuilding.sprite)
+        this.floatingBuilding.sprite = null
+
         this.selected.setSelected(null)
         
     }
 
     whenWallMined (interactionEvent, myTile, cave, emptyCoords)  {
 
-        if (this.dragging) {
+        if (this.dragging || this.buildMode || cave.getTile(emptyCoords).getBase() != 'wall') {
             return
         }
-
-        myTile.on("mouseup", () => {
-            return
-        })
 
         myTile.texture = PIXI.Texture.from('empty')
         let newEmpty = cave.getTile(emptyCoords)
@@ -228,7 +233,7 @@ export class Game {
 
     emptyTileClicked(coords,myCave) {
 
-        if (!this.dragging && this.movePath && myCave.getTile(coords).creatureCanFit) {
+        if (!this.dragging && !this.buildMode && this.movePath && myCave.getTile(coords).creatureCanFit) {
 
             let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
             if(!path) {
@@ -243,7 +248,7 @@ export class Game {
             this.selected.setSelected(null)
         }
 
-        if (!this.dragging) {
+        if (!this.dragging && !this.buildMode) {
             for (let sprite of this.floatingPaths) {
                 sprite.parent.removeChild(sprite);
                 sprite.destroy()
@@ -253,6 +258,14 @@ export class Game {
             this.selected.setSelected(null)
         }
 
+        if(this.buildMode && !this.dragging) {
+            if(myCave.canBuild(this.floatingBuilding.building,toCoords(coords))) {
+                myCave.build(this.floatingBuilding.building,toCoords(coords),this.floatingBuilding.sprite)
+                this.floatingBuilding.sprite = null
+                this.buildMode = false
+            }
+        }
+
     }
 
     emptyTileHover(coords,myCave,event) {
@@ -260,6 +273,7 @@ export class Game {
         let pos = event.data.global
 
         if (!this.dragging && 
+            !this.buildMode &&
             this.movePath &&
             pos.x < (
                 this.app.screen.width - this.selected.menu.block.width
@@ -332,7 +346,7 @@ export class Game {
     }
 
     emptyTileHoverExit() {
-        if (!this.dragging && this.selected.object) {
+        if (!this.dragging && !this.buildMode && this.selected.object) {
             for (let sprite of this.floatingPaths) {
                 sprite.parent.removeChild(sprite)
                 sprite.destroy()

@@ -16,7 +16,13 @@ const oreDist = 10
 
 
 export function toCoords(coords) {
-    let [x, y] = coords.split(",").map(Number)
+    let x = 0
+    let y = 0
+    try {
+        [x, y] = coords.split(",").map(Number)
+    } catch (e) {
+        return coords
+    }
     return {x: x, y: y}
 }
 
@@ -292,16 +298,19 @@ export class Cave extends Graph {
                     continue
                 }
                 curTile.setBuilt(building)
-                curTile.creatureCanFit = (building.openMap[y][x] === 1)
+                curTile.creatureCanFit = (building.openMap[y][x] >= 1)
             }
         }
 
+        let tileSprite = this.getTile(location.x+","+location.y).sprite
+
+        sprite.x = tileSprite.x + ((building.size.x - 1) * (40 * this.game.currentScale))
+        sprite.y = tileSprite.y + ((building.size.y - 1) * (40 * this.game.currentScale))
+        sprite.baseX = tileSprite.baseX + ((building.size.x - 1) * 40)
+        sprite.baseY = tileSprite.baseY + ((building.size.y - 1) * 40)
+
         sprite.anchor.set(0.5)
-        sprite.scale.set
-        sprite.x = (this.game.midx) + (80 * location.x * this.game.currentScale) + (sprite.width / 2 * this.game.currentScale) - 40
-        sprite.y = (this.game.midy) + (80 * location.y * this.game.currentScale) + (sprite.height / 2 * this.game.currentScale) - 40
-        sprite.baseX = (this.game.midx) + (80 * location.x) + (sprite.width / 2) - 40
-        sprite.baseY = (this.game.midy) + (80 * location.y) + (sprite.height / 2) - 40
+        sprite.scale.set(this.game.currentScale)
         sprite.interactive = true;
         sprite.buttonMode = true;
         sprite.zIndex = 1

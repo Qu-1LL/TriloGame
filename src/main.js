@@ -133,18 +133,24 @@ async function preload()
         game.dragging = false;
     });
 
+    const lastPos = {
+        x: 0,
+        y: 0
+    }
+
     window.addEventListener('mousemove', (e) => {
 
-        if (game.dragStartPos !== null) {
-            const rect = app.canvas.getBoundingClientRect();
-            const pos = {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top
-            };
+        let rect = app.canvas.getBoundingClientRect();
+        let pos = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
 
-            const dx = pos.x - game.dragStartPos.x;
-            const dy = pos.y - game.dragStartPos.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+        if (game.dragStartPos !== null) {
+
+            let dx = pos.x - game.dragStartPos.x;
+            let dy = pos.y - game.dragStartPos.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist > 10) {
                 game.dragging = true;
@@ -155,33 +161,42 @@ async function preload()
             }
 
         }
+
+        if (game.buildMode) {
+            game.floatingBuilding.sprite.x = game.floatingBuilding.sprite.position.x + (pos.x - lastPos.x)
+            game.floatingBuilding.sprite.y = game.floatingBuilding.sprite.position.y + (pos.y - lastPos.y)
+        }
+
+        lastPos.x = pos.x
+        lastPos.y = pos.y
     });
 
     window.addEventListener('mouseup', (e) => {
-        if (game.dragging) {
-            let rect = app.canvas.getBoundingClientRect();
-            let pos = {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top
-            };
+        let rect = app.canvas.getBoundingClientRect();
+        let pos = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
 
+        if (game.dragging) {
             let dx = (pos.x - game.dragStartPos.x) * (1 / game.currentScale);
             let dy = (pos.y - game.dragStartPos.y) * (1 / game.currentScale);
 
             game.totalXDelt -= dx
             game.totalYDelt -= dy
-            console.log(game.totalXDelt+","+game.totalYDelt)
             
             for (let child of game.tileContainer.children) {
                 child.baseX = child.baseX + dx
                 child.baseY = child.baseY + dy
             }
         } else {
-            //a bunch of other onclick functionality
+           //other functionality
         }
         game.dragStartPos = null;
         game.dragging = false;
     });
+
+
 
     window.addEventListener('keydown', (e) => {
         if (e.key ==='Enter') {
@@ -192,6 +207,11 @@ async function preload()
             }
         } else if (e.key ==='Escape') {
             game.cleanActive()
+        } else if (e.key === 'r') {
+            if (game.buildMode) {
+                game.floatingBuilding.sprite.rotation += Math.PI / 2
+                game.floatingBuilding.building.rotateMap()
+            }
         }
     })
 

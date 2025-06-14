@@ -231,6 +231,10 @@ export class Menu {
             this.container.addChild(myText)
 
             myButton.on('pointerover', (event) => {
+                if(this.game.buildMode) {
+                    return
+                }
+
                 let mySprite = PIXI.Sprite.from(building.sprite.texture)
                 mySprite.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2) + (10 * this.scale)
                 mySprite.y = this.bounds.minY + title.height + (10 * this.scale)
@@ -252,7 +256,6 @@ export class Menu {
                     style: infoStyle
                 })
 
-                console.log(myInfo.width)
                 myInfo.x = mySprite.x
                 myInfo.y = mySprite.y + mySprite.height + (10 * this.scale)
                 myInfo.zIndex = 1
@@ -261,14 +264,33 @@ export class Menu {
                 hoverContainer.addChild(myInfo)
             })
             myButton.on("pointerout", (event) => {
+                if(this.game.buildMode) {
+                    return
+                }
+
                 for(let child of [...hoverContainer.children]) {
                     child.parent.removeChild(child)
                     child.destroy()
                 }
             })
-            myButton.on('mouseup', (event => {
-                //initiate build sequence
-            }))
+            myButton.on('mouseup', (event) => {
+                this.game.buildMode = true
+                this.game.floatingBuilding.building = building.build()
+                this.game.floatingBuilding.sprite = this.game.floatingBuilding.building.sprite
+
+                this.game.tileContainer.addChild(this.game.floatingBuilding.sprite)
+                this.game.floatingBuilding.sprite.zIndex = 5
+
+                let rect = this.game.app.canvas.getBoundingClientRect();
+                let pos = {
+                    x: event.clientX - rect.left,
+                    y: event.clientY - rect.top
+                };
+                this.game.floatingBuilding.sprite.x = pos.x - rect.left + (40 * this.game.currentScale)
+                this.game.floatingBuilding.sprite.y = pos.y - rect.top + (40 * this.game.currentScale)
+                this.game.floatingBuilding.sprite.scale.set(this.game.currentScale)
+                this.game.floatingBuilding.sprite.anchor.set(0.5)
+            })
 
             marginAccumulate += (myButton.height + (10 * this.scale))
         }
