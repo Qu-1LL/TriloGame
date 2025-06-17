@@ -1,7 +1,7 @@
 
 import * as PIXI from 'pixi.js'
 import { Cave, toCoords } from './cave.js'
-import { Building } from './building.js'
+import * as BUILD from './building.js' 
 import { Creature } from './creature.js'
 import { Game } from './game.js'
 
@@ -67,11 +67,11 @@ async function preload()
 
     const cave = new Cave(app,game);
     
-    let queen = new Building('Queen',{x:3,y:3},[[1,1,1],[1,0,1],[1,1,1]])
+    var queen = new BUILD.Queen()
     var spawnX = Math.floor((Math.random() * 20) - 10)
     var spawnY = Math.floor((Math.random() * 20) - 10)
 
-    while(!cave.build(queen,{x:spawnX,y:spawnY},PIXI.Sprite.from('Queen'))) {
+    while(!cave.build(queen,{x:spawnX,y:spawnY},queen.sprite)) {
         spawnX = Math.floor((Math.random() * 20) - 10)
         spawnY = Math.floor((Math.random() * 20) - 10)
     }
@@ -167,7 +167,7 @@ async function preload()
             game.floatingBuilding.sprite.y = pos.y
             game.floatingBuilding.sprite.baseX = ((pos.x - game.floatingBuilding.sprite.position.baseX) * (1 / game.currentScale))
             game.floatingBuilding.sprite.baseY = ((pos.y - game.floatingBuilding.sprite.position.baseY) * (1 / game.currentScale))
-            console.log(game.floatingBuilding.sprite.position.x+","+game.floatingBuilding.sprite.position.y)
+            // console.log(game.floatingBuilding.sprite.position.x+","+game.floatingBuilding.sprite.position.y)
         }
     });
 
@@ -212,26 +212,18 @@ async function preload()
                 game.floatingBuilding.sprite.rotation += Math.PI / 2
                 game.floatingBuilding.building.rotateMap()
 
-                let kilter = game.floatingBuilding.building.size.x - game.floatingBuilding.building.size.y
-                kilter = kilter / 2
-
-                // game.floatingBuilding.building.sprite.x -= kilter * (40 * game.currentScale)
-                // game.floatingBuilding.building.sprite.y += kilter * (40 * game.currentScale)
-                // game.floatingBuilding.building.sprite.baseX -= kilter * 40
-                // game.floatingBuilding.building.sprite.baseY += kilter * 40
-
                 if (game.floatingBuilding.rotation == 0) {
                     game.floatingBuilding.rotation++
-                    game.floatingBuilding.sprite.anchor.set(0.25, 0.75)
+                    game.floatingBuilding.sprite.anchor.set(1 / (game.floatingBuilding.building.size.x * 2), ((game.floatingBuilding.building.size.y * 2) - 1) / (game.floatingBuilding.building.size.y * 2))
                 } else if (game.floatingBuilding.rotation == 1) {
                     game.floatingBuilding.rotation++
-                    game.floatingBuilding.sprite.anchor.set(0.75, 0.75)
+                    game.floatingBuilding.sprite.anchor.set((((game.floatingBuilding.building.size.x * 2) - 1) / (game.floatingBuilding.building.size.x * 2)), (((game.floatingBuilding.building.size.y * 2) - 1) / (game.floatingBuilding.building.size.y * 2)))
                 } else if (game.floatingBuilding.rotation == 2) {
                     game.floatingBuilding.rotation++
-                    game.floatingBuilding.sprite.anchor.set(0.75, 0.25)
+                    game.floatingBuilding.sprite.anchor.set((((game.floatingBuilding.building.size.x * 2) - 1) / (game.floatingBuilding.building.size.x * 2)), (1 / (game.floatingBuilding.building.size.y * 2)))
                 } else if (game.floatingBuilding.rotation == 3) {
                     game.floatingBuilding.rotation = 0
-                    game.floatingBuilding.sprite.anchor.set(0.25, 0.25)
+                    game.floatingBuilding.sprite.anchor.set((1 / (game.floatingBuilding.building.size.x * 2)), (1 / (game.floatingBuilding.building.size.y * 2)))
                 }
             }
         }

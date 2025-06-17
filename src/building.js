@@ -12,6 +12,7 @@ export class Factory {
         this.openMap = temp.openMap
         this.size = temp.size
         this.description = temp.description
+        this.hasStation = temp.hasStation
     }
 
     build(...args) {
@@ -22,7 +23,7 @@ export class Factory {
 
 export class Building {
 
-    constructor (name,size,openMap,game) {
+    constructor (name,size,openMap,game,station) {
         this.name = name
         this.size = size
         this.openMap = openMap
@@ -30,6 +31,8 @@ export class Building {
         this.tileArray = new Array()
         this.description = ''
         this.sprite = null
+        this.hasStation = station
+        this.location = {x: null, y: null}
     }
 
     rotateMap() {
@@ -51,6 +54,11 @@ export class Building {
         return rotated
     }
 
+    setLocation(x,y) {
+        this.location.x = x
+        this.location.y = y
+    } 
+
     getName() {
         return this.name
     }
@@ -69,10 +77,20 @@ export class Building {
 
 }
 
+export class Queen extends Building {
+
+    constructor(game) {
+        super('Queen',{x:3, y:3},[[1,1,1],[1,0,1],[1,1,1]],game,true)
+        this.sprite = PIXI.Sprite.from('Queen')
+
+        this.description = `The one and only Queen of your colony! Protect her at all costs!`
+    }
+}
+
 export class AlgaeFarm extends Building {
 
     constructor(game) {
-        super('Algae Farm',{x:2,y:2},[[0,0],[0,0]],game)
+        super('Algae Farm',{x:2,y:2},[[0,0],[0,0]],game,false)
         this.sprite = PIXI.Sprite.from('Algae Farm')
 
         this.rate = 2
@@ -93,7 +111,7 @@ export class AlgaeFarm extends Building {
 export class Storage extends Building {
 
     constructor (game) {
-        super("Storage",{x:2,y:2},[[0,0],[0,0]],game)
+        super("Storage",{x:2,y:2},[[0,0],[0,0]],game,false)
         this.sprite = PIXI.Sprite.from('Storage')
 
         this.capacity = 20
@@ -109,7 +127,7 @@ export class Storage extends Building {
 export class Smith extends Building {
 
     constructor (game) {
-        super("Smith",{x:2,y:2},[[0,0],[0,1]],game)
+        super("Smith",{x:2,y:2},[[0,0],[0,1]],game,true)
         this.sprite = PIXI.Sprite.from('Smith')
 
         this.description = `A building that allows you to craft new items for your species.`

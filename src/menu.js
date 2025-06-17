@@ -73,13 +73,13 @@ export class Menu {
         title.anchor.set(0.5)
         title.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2)
         title.y = this.bounds.minY + (title.height / 2)
-        title.zIndex = 1
+        this.addMenuItem(title,1,1,false)
 
         let coordsWin = PIXI.Sprite.from('window_5x4')
         coordsWin.scale.set(this.scale * 0.8)
         coordsWin.x = this.bounds.maxX - coordsWin.width - (20 * this.scale)
         coordsWin.y = this.bounds.minY + title.height + (20 * this.scale)
-        coordsWin.zIndex = 1
+        this.addMenuItem(coordsWin,1,0.8,true)
 
         style = new PIXI.TextStyle({
             fontFamily: 'Verdana',
@@ -94,14 +94,14 @@ export class Menu {
         let coordsX = new PIXI.Text({text: 'x: '+myX,style: style })
         coordsX.x = this.bounds.maxX - coordsWin.width - (5 * this.scale)
         coordsX.y = coordsWin.position.y + (10 * this.scale)
-        coordsX.zIndex = 2
+        this.addMenuItem(coordsX,2,1,false)
 
         let myY = -this.object.location.y
         
         let coordsY = new PIXI.Text({text: 'y: '+myY,style: style })
         coordsY.x = this.bounds.maxX - coordsWin.width - (5 * this.scale)
         coordsY.y = coordsWin.position.y + (45 * this.scale)
-        coordsY.zIndex = 2
+        this.addMenuItem(coordsY,2,1,false)
 
         //shmupdate
         //add "move" button
@@ -113,14 +113,11 @@ export class Menu {
         let moveButton = PIXI.Sprite.from('window_4x1')
         moveButton.x = this.bounds.minX + (10 * this.scale)
         moveButton.y = this.bounds.minY + title.height + (20 * this.scale)
-        moveButton.zIndex = 1
-        moveButton.scale.set(this.scale * 0.6)
-        moveButton.interactive = true
-        moveButton.buttonMode = true
+        this.addMenuItem(moveButton,1,0.6,true)
         let moveText = new PIXI.Text({text: 'Move',style: style })
         moveText.x = moveButton.position.x + (15 * this.scale)
         moveText.y = moveButton.position.y + (7 * this.scale)
-        moveText.zIndex = 2
+        this.addMenuItem(moveText,1,1,false)
 
         moveButton.on('mouseup',(e) => {
             this.game.movePath = true
@@ -134,14 +131,11 @@ export class Menu {
         let buildButton = PIXI.Sprite.from('window_4x1')
         buildButton.x = this.bounds.minX + (10 * this.scale)
         buildButton.y = moveButton.y + moveButton.height + (10 * this.scale)
-        buildButton.zIndex = 1
-        buildButton.scale.set(this.scale * 0.6)
-        buildButton.interactive = true
-        buildButton.buttonMode = true
+        this.addMenuItem(buildButton,1,0.6,true)
         let buildText = new PIXI.Text({text: 'Build',style: style })
         buildText.x = buildButton.position.x + (15 * this.scale)
         buildText.y = buildButton.position.y + (7 * this.scale)
-        buildText.zIndex = 2
+        this.addMenuItem(buildText,2,1,false)
 
         buildButton.on('mouseup',(e) => {
             this.close()
@@ -153,31 +147,16 @@ export class Menu {
         let mineButton = PIXI.Sprite.from('window_4x1')
         mineButton.x = this.bounds.minX + (10 * this.scale)
         mineButton.y = buildButton.y + buildButton.height + (10 * this.scale)
-        mineButton.zIndex = 1
-        mineButton.scale.set(this.scale * 0.6)
-        mineButton.interactive = true
-        mineButton.buttonMode = true
+        this.addMenuItem(mineButton,1,0.6,true)
         let mineText = new PIXI.Text({text: 'Mine',style: style })
         mineText.x = mineButton.position.x + (15 * this.scale)
         mineText.y = mineButton.position.y + (7 * this.scale)
-        mineText.zIndex = 2
+        this.addMenuItem(mineText,2,1,false)
 
         //function should search the creature's four adjacent tiles for 
         //creature doesn't fit + holding building to see if it can do 
         //any actions unique to a building
 
-        this.container.addChild(title)
-
-        this.container.addChild(coordsWin)
-        this.container.addChild(coordsX)
-        this.container.addChild(coordsY)
-
-        this.container.addChild(moveButton)
-        this.container.addChild(moveText)
-        this.container.addChild(buildButton)
-        this.container.addChild(buildText)
-        this.container.addChild(mineButton)
-        this.container.addChild(mineText)
     }
 
     buildOptionsMenu() {
@@ -195,7 +174,7 @@ export class Menu {
         title.anchor.set(0.5)
         title.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2)
         title.y = this.bounds.minY + (title.height / 2)
-        title.zIndex = 1
+        this.addMenuItem(title,1,1,false)
 
         style = new PIXI.TextStyle({
             fontFamily: 'Verdana',
@@ -204,8 +183,6 @@ export class Menu {
             wordWrap: true,
             wordWrapWidth: 440
         });
-
-        this.container.addChild(title)
 
         let marginAccumulate = 10 * this.scale
 
@@ -218,17 +195,11 @@ export class Menu {
             let myButton = PIXI.Sprite.from('window_4x1')
             myButton.x = this.bounds.minX + (10 * this.scale)
             myButton.y = this.bounds.minY + title.height + marginAccumulate
-            myButton.zIndex = 1
-            myButton.scale.set(this.scale * 0.6)
-            myButton.interactive = true
-            myButton.buttonMode = true
+            this.addMenuItem(myButton,1,0.6,true)
             let myText = new PIXI.Text({text: building.name, style: style})
             myText.x = myButton.position.x + (15 * this.scale)
             myText.y = myButton.position.y + (7 * this.scale)
-            myText.zIndex = 2
-
-            this.container.addChild(myButton)
-            this.container.addChild(myText)
+            this.addMenuItem(myText,2,1,false)
 
             myButton.on('pointerover', (event) => {
                 if(this.game.buildMode) {
@@ -274,6 +245,7 @@ export class Menu {
                 }
             })
             myButton.on('mouseup', (event) => {
+
                 this.game.buildMode = true
                 this.game.floatingBuilding.building = building.build()
                 this.game.floatingBuilding.sprite = this.game.floatingBuilding.building.sprite
@@ -291,7 +263,8 @@ export class Menu {
                 this.game.floatingBuilding.sprite.baseX = pos.x - rect.left
                 this.game.floatingBuilding.sprite.baseY = pos.y - rect.top
                 this.game.floatingBuilding.sprite.scale.set(this.game.currentScale)
-                this.game.floatingBuilding.sprite.anchor.set(0.25, 0.25)
+                this.game.floatingBuilding.sprite.anchor.set((1 / (this.game.floatingBuilding.building.size.x * 2)),  (1 / (this.game.floatingBuilding.building.size.y * 2)))
+                this.game.floatingBuilding.rotation = 0
             })
 
             marginAccumulate += (myButton.height + (10 * this.scale))
@@ -300,6 +273,15 @@ export class Menu {
 
     buildingMenu() {
 
+    }
+
+    addMenuItem(item,zIndex = 1,scaleMult = 1, interactive = true) {
+        item.zIndex = zIndex
+        item.scale.set(this.scale * scaleMult)
+        item.interactive = interactive
+        item.buttonMode = interactive
+
+        this.container.addChild(item)
     }
 
 

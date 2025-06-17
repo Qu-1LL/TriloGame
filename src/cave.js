@@ -296,7 +296,8 @@ export class Cave extends Graph {
             return false
         }
         this.buildings.add(building)
-        //still needs to check if a building isn't overlapping
+        building.setLocation(location.x,location.y)
+
         for(let x = 0; x < building.size.x; x++) {
             for (let y = 0; y < building.size.y; y++) {
                 let theseCoords = (location.x + x) + "," + (location.y + y)
@@ -338,12 +339,18 @@ export class Cave extends Graph {
         sprite.on('mouseup', (event) => {
             let pos = event.data.global;
 
+            let carryModes = this.game.movePath || this.game.buildMode
+
             for (let tile of building.tileArray) {
                 let bounds = tile.sprite.getBounds()
                 if (bounds.minX < pos.x && bounds.maxX > pos.x && bounds.minY < pos.y && bounds.maxY > pos.y) {
                     tile.sprite.emit('mouseup', event);
                     break;
                 }
+            }
+
+            if (this.game.selected.object == null && !carryModes) {
+                this.game.selected.setSelected(building)
             }
         });
 
@@ -414,7 +421,7 @@ export class Cave extends Graph {
 
                 if (!visited.has(n.value)) {
                     timeCount++
-                    if (n.creatureCanFit) {
+                    if (n.creatureFits()) {
                         queue.push(n.value);
                         visited.add(n.value);
                         cameFrom.set(n.value, currentKey);

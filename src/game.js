@@ -73,6 +73,9 @@ export class Game {
                 this.selection.visible = false
                 this.selection.anchor.set(0.5)
                 this.selection.zIndex = 3
+
+                this.claySelection = new Set()
+
                 this.uiContainer = uiContainer
                 this.tileContainer = tileContainer
                 tileContainer.addChild(this.selection)
@@ -81,25 +84,13 @@ export class Game {
                 this.selectedPaths = new Set()
             }
             setSelected(s) {
-                this.object = s
+                
                 if (s == null) {
-                    if (this.menu !== null) {
-                        this.menu.close()
-                        this.menu = null
-
-                    }
-                    this.selection.visible = false
-                    for (let sprite of this.selectedPaths) {
-                        sprite.parent.removeChild(sprite)
-                        sprite.destroy()
-                    }
-                    this.selectedPaths.clear()
+                    this.object = s
+                    return
                 } else {
-                    this.selection.x = s.sprite.position.x
-                    this.selection.y = s.sprite.position.y
-                    this.selection.baseX = s.sprite.baseX
-                    this.selection.baseY = s.sprite.baseY
-                    this.selection.visible = true
+                    this.game.cleanActive()
+                    this.object = s
 
                     this.menu = new Menu(app,s,this.uiContainer)
                     this.menu.open()
@@ -107,10 +98,47 @@ export class Game {
                     this.centerSelection()
 
                     if (this.object instanceof Creature) {
+                        this.selection.x = s.sprite.position.x
+                        this.selection.y = s.sprite.position.y
+                        this.selection.baseX = s.sprite.baseX
+                        this.selection.baseY = s.sprite.baseY
+                        this.selection.visible = true
                         if (this.object.queue.peek()) {
                             let myPath = [...this.object.queue.toArray()]
                             myPath.unshift(this.object.location)
                             this.game.displayPath(myPath,this.selectedPaths)
+                        }
+                    } else if (this.object instanceof BUILD.Building) {
+                        for (let tile of this.object.tileArray) {
+                            for (let n of tile.getNeighbors()) {
+                                if (!this.object.tileArray.includes(n)) {
+                                    let myBorder = PIXI.Sprite.from('selectededge')
+                                    myBorder.anchor.set(0.5, 0)
+                                    this.claySelection.add(myBorder)
+                                    this.tileContainer.addChild(myBorder)
+
+                                    let nCoords = toCoords(n.value)
+                                    let tileCoords = toCoords(tile.value)
+                                    let dx = nCoords.x - tileCoords.x
+                                    let dy = nCoords.y - tileCoords.y
+
+                                    if (dy == 0) {
+                                        myBorder.rotation = Math.PI / 2
+                                    }
+
+                                    if (dy < 0 || dx < 0) {
+                                        myBorder.anchor.set(0.5,1)
+                                    }
+
+                                    myBorder.x = tile.sprite.position.x + (dx * 40 * this.game.currentScale)
+                                    myBorder.y = tile.sprite.position.y + (dy * 40 * this.game.currentScale)
+                                    myBorder.baseX = tile.sprite.baseX + (dx * 40)
+                                    myBorder.baseY - tile.sprite.baseY + (dy * 40)
+                                    myBorder.visible = true
+                                    myBorder.zIndex = 3
+                                    
+                                }
+                            }
                         }
                     }
                 }
@@ -133,11 +161,17 @@ export class Game {
     }
 
     cleanActive() {
+
         for (let sprite of this.floatingPaths) {
             sprite.parent.removeChild(sprite);
             sprite.destroy()
         }
+        for (let sprite of this.selected.claySelection) {
+            sprite.parent.removeChild(sprite);
+            sprite.destroy()
+        }
         this.floatingPaths.clear()
+        this.selected.claySelection.clear()
         this.movePath = false
         this.buildMode = false
         this.floatingBuilding.building = null
@@ -145,6 +179,17 @@ export class Game {
         this.floatingBuilding.sprite = null
         this.floatingBuilding.rotation = 0
 
+        if (this.selected.menu !== null) {
+            this.selected.menu.close()
+            this.selected.menu = null
+
+        }
+        this.selected.selection.visible = false
+        for (let sprite of this.selected.selectedPaths) {
+            sprite.parent.removeChild(sprite)
+            sprite.destroy()
+        }
+        this.selected.selectedPaths.clear()
         this.selected.setSelected(null)
         
     }
@@ -235,7 +280,7 @@ export class Game {
 
     emptyTileClicked(coords,myCave) {
 
-        if (!this.dragging && !this.buildMode && this.movePath && myCave.getTile(coords).creatureCanFit) {
+        if (!this.dragging && !this.buildMode && this.movePath && myCave.getTile(coords).creatureFits()) {
 
             let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
             if(!path) {
@@ -251,13 +296,15 @@ export class Game {
         }
 
         if (!this.dragging && !this.buildMode) {
-            for (let sprite of this.floatingPaths) {
-                sprite.parent.removeChild(sprite);
-                sprite.destroy()
-            }
-            this.floatingPaths.clear()
-            this.movePath = false
-            this.selected.setSelected(null)
+            // for (let sprite of this.floatingPaths) {
+            //     sprite.parent.removeChild(sprite);
+            //     sprite.destroy()
+            // }
+            // this.floatingPaths.clear()
+            // this.movePath = false
+            // this.selected.setSelected(null)
+
+            this.cleanActive()
         }
 
         if(this.buildMode && !this.dragging) {
