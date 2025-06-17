@@ -1,6 +1,7 @@
 
 import { NodeQueue } from './queue-data.js'
 import { Game } from './game.js'
+import { toCoords, toKey } from './cave.js'
 
 export class Creature {
     constructor(name,location,sprite,game) {
@@ -9,8 +10,13 @@ export class Creature {
         this.location = location
         this.sprite = sprite
         this.game = game
+        this.cave = null
 
         sprite.on('mouseup', (interactionEvent) => {
+            if (this.game.buildMode) {
+                return
+            }
+            
             if (this.game.selected.object === this) {
                 this.game.selected.setSelected(null)
                 return
@@ -26,11 +32,21 @@ export class Creature {
 
     move() {
 
-        let next = this.queue.peek()
+        let myPath = this.cave.bfsPath(toKey(this.location),toKey(this.queue.getRear()))
+        this.queue.clear()
 
-        //shmupdate: if creature can successfully do next
+        if(!myPath) {
+            return null
+        } 
+        
+        //warn user that path was interrupted if it returns null
 
-        next = this.queue.dequeue()
+        myPath.shift()
+        for (let i = 0; i < myPath.length; i++) {
+            this.queue.enqueue(myPath[i])
+        }
+
+        let next = this.queue.dequeue()
 
         if (next === null) {
             return null

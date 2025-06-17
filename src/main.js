@@ -119,6 +119,9 @@ async function preload()
         }
         for (let child of game.tileContainer.children) {
             child.scale.set(game.currentScale);
+            if (child === game.floatingBuilding.sprite) {
+                continue
+            }
             child.x = game.midx + ((child.baseX - game.midx) * game.currentScale)
             child.y = game.midy + ((child.baseY - game.midy) * game.currentScale)
         }
@@ -132,11 +135,6 @@ async function preload()
         };
         game.dragging = false;
     });
-
-    const lastPos = {
-        x: 0,
-        y: 0
-    }
 
     window.addEventListener('mousemove', (e) => {
 
@@ -155,20 +153,22 @@ async function preload()
             if (dist > 10) {
                 game.dragging = true;
                 for (let child of game.tileContainer.children) {
+                    if (child === game.floatingBuilding.sprite) {
+                        continue
+                    }
                     child.x = game.midx + ((child.baseX - game.midx) * game.currentScale) + dx
                     child.y = game.midy + ((child.baseY - game.midy) * game.currentScale) + dy
                 }
             }
 
         }
-
         if (game.buildMode) {
-            game.floatingBuilding.sprite.x = game.floatingBuilding.sprite.position.x + (pos.x - lastPos.x)
-            game.floatingBuilding.sprite.y = game.floatingBuilding.sprite.position.y + (pos.y - lastPos.y)
+            game.floatingBuilding.sprite.x = pos.x
+            game.floatingBuilding.sprite.y = pos.y
+            game.floatingBuilding.sprite.baseX = ((pos.x - game.floatingBuilding.sprite.position.baseX) * (1 / game.currentScale))
+            game.floatingBuilding.sprite.baseY = ((pos.y - game.floatingBuilding.sprite.position.baseY) * (1 / game.currentScale))
+            console.log(game.floatingBuilding.sprite.position.x+","+game.floatingBuilding.sprite.position.y)
         }
-
-        lastPos.x = pos.x
-        lastPos.y = pos.y
     });
 
     window.addEventListener('mouseup', (e) => {
@@ -211,6 +211,28 @@ async function preload()
             if (game.buildMode) {
                 game.floatingBuilding.sprite.rotation += Math.PI / 2
                 game.floatingBuilding.building.rotateMap()
+
+                let kilter = game.floatingBuilding.building.size.x - game.floatingBuilding.building.size.y
+                kilter = kilter / 2
+
+                // game.floatingBuilding.building.sprite.x -= kilter * (40 * game.currentScale)
+                // game.floatingBuilding.building.sprite.y += kilter * (40 * game.currentScale)
+                // game.floatingBuilding.building.sprite.baseX -= kilter * 40
+                // game.floatingBuilding.building.sprite.baseY += kilter * 40
+
+                if (game.floatingBuilding.rotation == 0) {
+                    game.floatingBuilding.rotation++
+                    game.floatingBuilding.sprite.anchor.set(0.25, 0.75)
+                } else if (game.floatingBuilding.rotation == 1) {
+                    game.floatingBuilding.rotation++
+                    game.floatingBuilding.sprite.anchor.set(0.75, 0.75)
+                } else if (game.floatingBuilding.rotation == 2) {
+                    game.floatingBuilding.rotation++
+                    game.floatingBuilding.sprite.anchor.set(0.75, 0.25)
+                } else if (game.floatingBuilding.rotation == 3) {
+                    game.floatingBuilding.rotation = 0
+                    game.floatingBuilding.sprite.anchor.set(0.25, 0.25)
+                }
             }
         }
     })

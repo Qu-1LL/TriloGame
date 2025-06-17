@@ -26,6 +26,14 @@ export function toCoords(coords) {
     return {x: x, y: y}
 }
 
+export function toKey(location) {
+    try {
+        return location.x+","+location.y
+    } catch (e) {
+        return location
+    }
+}
+
 
 export class Cave extends Graph {
 
@@ -308,7 +316,7 @@ export class Cave extends Graph {
         sprite.y = tileSprite.y + ((building.size.y - 1) * (40 * this.game.currentScale))
         sprite.baseX = tileSprite.baseX + ((building.size.x - 1) * 40)
         sprite.baseY = tileSprite.baseY + ((building.size.y - 1) * 40)
-
+        this.game.tileContainer.addChild(sprite)
         sprite.anchor.set(0.5)
         sprite.scale.set(this.game.currentScale)
         sprite.interactive = true;
@@ -370,6 +378,7 @@ export class Cave extends Graph {
         creature.sprite.interactive = true;
         creature.sprite.buttonMode = true;
         creature.sprite.zIndex = 2
+        creature.cave = this
 
         this.game.tileContainer.addChild(creature.sprite)
 

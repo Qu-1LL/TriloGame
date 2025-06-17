@@ -286,10 +286,12 @@ export class Menu {
                     x: event.clientX - rect.left,
                     y: event.clientY - rect.top
                 };
-                this.game.floatingBuilding.sprite.x = pos.x - rect.left + (40 * this.game.currentScale)
-                this.game.floatingBuilding.sprite.y = pos.y - rect.top + (40 * this.game.currentScale)
+                this.game.floatingBuilding.sprite.x = pos.x - rect.left
+                this.game.floatingBuilding.sprite.y = pos.y - rect.top
+                this.game.floatingBuilding.sprite.baseX = pos.x - rect.left
+                this.game.floatingBuilding.sprite.baseY = pos.y - rect.top
                 this.game.floatingBuilding.sprite.scale.set(this.game.currentScale)
-                this.game.floatingBuilding.sprite.anchor.set(0.5)
+                this.game.floatingBuilding.sprite.anchor.set(0.25, 0.25)
             })
 
             marginAccumulate += (myButton.height + (10 * this.scale))

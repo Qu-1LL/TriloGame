@@ -48,6 +48,10 @@ export class NodeQueue {
         return this.length;
     }
 
+    getRear() {
+        return this.isEmpty() ? null : this.rear.value
+    }
+
     clear() {
         this.font = null
         this.rear = null

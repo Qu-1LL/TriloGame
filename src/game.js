@@ -39,7 +39,8 @@ export class Game {
 
         this.floatingBuilding = {
             building: null,
-            sprite: null
+            sprite: null,
+            rotation: 0
         }
 
         //practical variables
@@ -142,6 +143,7 @@ export class Game {
         this.floatingBuilding.building = null
         this.tileContainer.removeChild(this.floatingBuilding.sprite)
         this.floatingBuilding.sprite = null
+        this.floatingBuilding.rotation = 0
 
         this.selected.setSelected(null)
         
@@ -260,9 +262,11 @@ export class Game {
 
         if(this.buildMode && !this.dragging) {
             if(myCave.canBuild(this.floatingBuilding.building,toCoords(coords))) {
+                this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
                 myCave.build(this.floatingBuilding.building,toCoords(coords),this.floatingBuilding.sprite)
                 this.floatingBuilding.sprite = null
                 this.buildMode = false
+                this.cleanActive()
             }
         }
 
