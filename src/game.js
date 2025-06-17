@@ -134,6 +134,7 @@ export class Game {
                                     myBorder.y = tile.sprite.position.y + (dy * 40 * this.game.currentScale)
                                     myBorder.baseX = tile.sprite.baseX + (dx * 40)
                                     myBorder.baseY = tile.sprite.baseY + (dy * 40)
+                                    myBorder.scale.set(this.game.currentScale)
                                     myBorder.visible = true
                                     myBorder.zIndex = 3
                                     
