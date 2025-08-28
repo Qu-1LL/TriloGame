@@ -9,9 +9,9 @@ What I've got working so far:
   - Zooming in and out
   - Clicking and dragging to move view
   - "Mining" a cave wall (<mark>click on a wall tile</mark> to "mine" it)
-  - Selecting trilobites
-  - Selecting buildings (<mark>click on a building or trilobite</mark> to select it)
-  - Assigning trilobite's movement
+  - Selecting objects (<mark>click on a trilobite or building</mark> to select it)
+  - Building a building (<mark>select the "build" option</mark> from the trilobite's menu)
+  - Assigning a trilobite's movement (<mark>select the "move" option</mark> from the trilobite's menu)
   - Trilobites executing movement (<mark>press enter</mark> once a path has been assigned)
   - Trilobite menu
   - Selecting a building from the menu and placing it
