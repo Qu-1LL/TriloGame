@@ -196,8 +196,6 @@ async function preload()
         game.dragging = false;
     });
 
-
-
     window.addEventListener('keydown', (e) => {
         if (e.key ==='Enter') {
             console.log('Enter pressed')

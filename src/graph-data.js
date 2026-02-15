@@ -1,11 +1,11 @@
 
 
 export class Tile {
-    constructor(value) {
-        this.value = value;
+    constructor(key) {
+        this.key = key;
         this.holding = new Map();
         this.holding.set('base', 'empty')
-        this.holding.set('built','none')
+        this.holding.set('built',null)
         this.creatureCanFit = true
         this.adjacent = new Set();
         this.sprite = null
@@ -62,23 +62,23 @@ export class Tile {
 
 export class Graph {
     constructor() {
-        this.tiles = new Map(); // value -> Tile
+        this.tiles = new Map(); // key -> Tile
     }
 
-    addTile(value) {
-        if (!this.tiles.has(value)) {
-            this.tiles.set(value, new Tile(value));
+    addTile(key) {
+        if (!this.tiles.has(key)) {
+            this.tiles.set(key, new Tile(key));
         }
-        return this.tiles.get(value);
+        return this.tiles.get(key);
     }
 
-    removeTile(value) {
-        let deleted = this.tiles.get(value)
+    removeTile(key) {
+        let deleted = this.tiles.get(key)
         if (deleted) {
             for(let n of deleted.getNeighbors()) {
                 n.removeNeighbor(deleted)
             }
-            this.tiles.delete(value)
+            this.tiles.delete(key)
             return deleted;
         } else {
             return null;
@@ -92,8 +92,8 @@ export class Graph {
         v2.addNeighbor(v1); 
     }
 
-    getTile(value) {
-        return this.tiles.get(value);
+    getTile(key) {
+        return this.tiles.get(key);
     }
 
     getTiles() {

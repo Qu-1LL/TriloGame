@@ -117,8 +117,8 @@ export class Game {
                                     this.claySelection.add(myBorder)
                                     this.tileContainer.addChild(myBorder)
 
-                                    let nCoords = toCoords(n.value)
-                                    let tileCoords = toCoords(tile.value)
+                                    let nCoords = toCoords(n.key)
+                                    let tileCoords = toCoords(tile.key)
                                     let dx = nCoords.x - tileCoords.x
                                     let dy = nCoords.y - tileCoords.y
 
@@ -223,7 +223,7 @@ export class Game {
         myDelts.set('w',{x:-1,y:0})
         let myCoords = toCoords(emptyCoords)
         for (let n of cave.getTile(emptyCoords).getNeighbors()) {
-            let nCoords = toCoords(n.value)
+            let nCoords = toCoords(n.key)
             if (nCoords.x - myCoords.x == 1 ) {
                 myDelts.delete('e')
             } else if (nCoords.x - myCoords.x == -1) {

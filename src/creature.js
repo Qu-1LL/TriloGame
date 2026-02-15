@@ -80,6 +80,30 @@ export class Creature {
         }
     }
 
+    getActions() {
+        let myTile = this.cave.getTile(toKey(this.location))
+        let myNeighbors = [ ...myTile.getNeighbors()]
+
+        var myActions = new Set()
+
+        if (myTile.getBuilt()) {
+            let myBuilding = myTile.getBuilt()
+            if (myBuilding.hasStation) {
+                myActions.add(myBuilding)
+            }
+        } 
+
+        for (let n of myNeighbors) {
+            if (n.getBuilt()) {
+                if (!n.getBuilt().hasStation) {
+                    myActions.add(n.getBuilt())
+                }
+            }
+        }
+
+        return myActions
+    }
+
     getBuildable() {
         let myBuildings = [...this.game.unlockedBuildings]
         //if creature can build special buildings, add those here

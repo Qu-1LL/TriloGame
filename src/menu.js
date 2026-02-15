@@ -153,9 +153,7 @@ export class Menu {
         mineText.y = mineButton.position.y + (7 * this.scale)
         this.addMenuItem(mineText,2,1,false)
 
-        //function should search the creature's four adjacent tiles for 
-        //creature doesn't fit + holding building to see if it can do 
-        //any actions unique to a building
+        let otherChoices = this.object.getActions()
 
     }
 
@@ -272,7 +270,13 @@ export class Menu {
     }
 
     buildingMenu() {
+        //shouold be a pretty standardized menu showing building level and stuff like that
+        //small differences like smith listing the items you could build and their prices
+        //storage could display what it is storing
+        //basically default information but will not allow for interaction
 
+        //more complex menu shows up when you select a trilobite then select one of 
+        //the actions of a building adjacent to it
     }
 
     addMenuItem(item,zIndex = 1,scaleMult = 1, interactive = true) {

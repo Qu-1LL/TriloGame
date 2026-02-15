@@ -41,7 +41,7 @@ export class Cave extends Graph {
         super()
         while( this.tiles.size < 28000) {
             this.tiles = new Map();
-            this.#generateCave();
+            this.#generateCaveShrink();
         }
         this.creatures = new Set();
         this.buildings = new Set();
@@ -85,7 +85,7 @@ export class Cave extends Graph {
         }
     }
 
-    #generateCave() {
+    #generateCaveShrink() {
         //generates starting area
         this.#fillCircle(0,0,radius)
 
@@ -151,6 +151,7 @@ export class Cave extends Graph {
             }
         }
 
+
         //add cave walls
         myValues = [...this.tiles.keys()]
         for (let i = 0; i < myValues.length; i++) {
@@ -177,6 +178,10 @@ export class Cave extends Graph {
         }
 
         this.#fillOres()
+    }
+
+    #generateCaveGrowth() {
+        
     }
 
     #degradeCave() {
@@ -228,7 +233,7 @@ export class Cave extends Graph {
 
                 let myLower = Math.abs(randomNormal( 3 * cavernCount * oreCount ,cavernCount * (Ore.getOres().length - oreCount)) / oreDist)
                 let myUpper = Math.abs(randomNormal( 3 * cavernCount * (oreCount + 3),2 * cavernCount * (Ore.getOres().length - oreCount)) / oreDist)
-                let myCoords = toCoords(tile.value)
+                let myCoords = toCoords(tile.key)
                 let myVect = getDistance(myCoords.x,myCoords.y,0,0) 
                 if ( myVect > myLower && myVect < myUpper && tile.getBase() == 'empty') {
                     tile.setBase(ore.name)
@@ -283,7 +288,7 @@ export class Cave extends Graph {
                 if (curTile === undefined) {
                     return false
                 }
-                if (curTile.getBuilt() !== 'none' || curTile.getBase() !== 'empty' || !curTile.creatureFits()) {
+                if (curTile.getBuilt() || curTile.getBase() !== 'empty' || !curTile.creatureFits()) {
                     return false
                 }
             }
@@ -419,12 +424,12 @@ export class Cave extends Graph {
 
             for (let n of this.getTile(currentKey).getNeighbors()) {
 
-                if (!visited.has(n.value)) {
+                if (!visited.has(n.key)) {
                     timeCount++
                     if (n.creatureFits()) {
-                        queue.push(n.value);
-                        visited.add(n.value);
-                        cameFrom.set(n.value, currentKey);
+                        queue.push(n.key);
+                        visited.add(n.key);
+                        cameFrom.set(n.key, currentKey);
                     }
                 }
             }
