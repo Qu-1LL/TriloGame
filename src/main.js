@@ -39,6 +39,7 @@ async function preload()
         { alias: 'Algae Farm', src: `${base}assets/AlgaeFarm.png` },
         { alias: 'Storage', src: `${base}assets/Storage.png` },
         { alias: 'Smith', src: `${base}assets/Smith.png` },
+        { alias: 'Mining Post', src: `${base}assets/MiningPost.png`},
 
         { alias: 'path', src: `${base}assets/Path.png` },
         { alias: 'orepath', src: `${base}assets/OrePath.png` },
