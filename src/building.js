@@ -77,6 +77,26 @@ export class Building {
 
 }
 
+export class MiningPost extends Building {
+    constructor(game){
+        super('Mining Post', {x:3, y:3}, [[1,1,1],[1,0,1],[1,1,1]],game,true)
+        // todo: sprite
+
+        this.description = `Units assigned to this post will mine ore and stone in a ${this.getRadius()}-block radius and store it here. Has a capacity of ${this.getCapacity()}.`
+
+        this.capacity = 100
+        this.radius = 10
+    }
+    
+    getCapacity() {
+        return this.capacity
+    }
+
+    getRadius(){
+        return this.radius
+    }
+}
+
 export class Queen extends Building {
 
     constructor(game) {
