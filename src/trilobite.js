@@ -9,5 +9,5 @@ export class Trilobite extends Creature {
 
     }
 
-
+    
 }

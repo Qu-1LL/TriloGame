@@ -1,4 +1,6 @@
 import * as PIXI from 'pixi.js'
+import { Trilobite } from './trilobite'
+
 
 export class Factory {
 
@@ -57,7 +59,11 @@ export class Building {
     setLocation(x,y) {
         this.location.x = x
         this.location.y = y
-    } 
+    }
+    
+    getLocation(){
+        return this.location
+    }
 
     getName() {
         return this.name
@@ -99,12 +105,29 @@ export class MiningPost extends Building {
 
 export class Queen extends Building {
 
-    constructor(game) {
+    constructor(game, cave) {
         super('Queen',{x:3, y:3},[[1,1,1],[1,0,1],[1,1,1]],game,true)
         this.sprite = PIXI.Sprite.from('Queen')
 
         this.description = `The one and only Queen of your colony! Protect her at all costs!`
+
+        this.cave = cave;
+        this.algae = 0
+        this.algaeMax = 20
     }
+
+    spawnTrilo(){
+        // select random tile near queen
+        let chudTile = this.tileArray[Math.floor(Math.random * this.tileArray.length)]
+        while (chudTile.getCoords().x == this.location.x && chudTile.getCoords().y == this.location.y){
+            chudTile = this.tileArray[Math.floor(Math.random * this.tileArray.length)]
+        }
+
+        // todo: replace placeholder name
+        this.cave.spawn(new Trilobite("Quan", {x: chudTile.getCoords().x, y: chudTile.getCoords().y}, this.game), chudTile)
+        this.algae = 0;
+    }
+
 }
 
 export class AlgaeFarm extends Building {

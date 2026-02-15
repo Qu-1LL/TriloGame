@@ -1,4 +1,4 @@
-
+import { toCoords } from "./cave";
 
 export class Tile {
     constructor(key) {
@@ -9,6 +9,10 @@ export class Tile {
         this.creatureCanFit = true
         this.adjacent = new Set();
         this.sprite = null
+    }
+
+    getCoords(){
+        return toCoords(this.key)
     }
 
     addNeighbor(Tile) {
