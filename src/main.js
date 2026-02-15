@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js'
 import { Cave, toCoords } from './cave.js'
 import * as BUILD from './building.js' 
 import { Creature } from './creature.js'
+import { Trilobite } from './trilobite.js'
 import { Game } from './game.js'
 
 const app = new PIXI.Application();
@@ -76,16 +77,16 @@ async function preload()
         spawnY = Math.floor((Math.random() * 20) - 10)
     }
 
-    let trilo = new Creature('Jeffery',{x:spawnX+2,y:spawnY},PIXI.Sprite.from('Trilobite'),game)
+    let trilo = new Trilobite('Jeffery',{x:spawnX+2,y:spawnY},game)
     cave.spawn(trilo,cave.getTile((spawnX+2)+','+spawnY))
 
-    trilo = new Creature('Quinton',{x:spawnX+2,y:spawnY+2},PIXI.Sprite.from('Trilobite'),game)
+    trilo = new Trilobite('Quinton',{x:spawnX+2,y:spawnY+2},game)
     cave.spawn(trilo,cave.getTile((spawnX+2)+','+(spawnY+2)))
 
-    trilo = new Creature('Yeetmuncher',{x:spawnX,y:spawnY},PIXI.Sprite.from('Trilobite'),game)
+    trilo = new Trilobite('Yeetmuncher',{x:spawnX,y:spawnY},game)
     cave.spawn(trilo,cave.getTile(spawnX+','+spawnY))
 
-    trilo = new Creature('Sigma',{x:spawnX,y:spawnY+2},PIXI.Sprite.from('Trilobite'),game)
+    trilo = new Trilobite('Sigma',{x:spawnX,y:spawnY+2},game)
     cave.spawn(trilo,cave.getTile(spawnX+','+(spawnY+2)))
 
     game.totalXDelt = spawnX * 80 + 80
