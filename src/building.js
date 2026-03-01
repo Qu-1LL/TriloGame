@@ -128,6 +128,13 @@ export class Queen extends Building {
         this.algae = 0;
     }
 
+    feedAlgae(amount){
+        this.algae += amount;
+        if (amount >= this.algaeMax){
+            this.spawnTrilo()
+        }
+    }
+
 }
 
 export class AlgaeFarm extends Building {
