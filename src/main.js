@@ -7,6 +7,36 @@ import { Trilobite } from './trilobite.js'
 import { Game } from './game.js'
 
 const app = new PIXI.Application();
+let gamePaused = true
+
+function formatInventory(inv) {
+    if (!inv || inv.amount <= 0 || !inv.type) {
+        return 'empty'
+    }
+    return `${inv.amount} ${inv.type}`
+}
+
+function logTickState(cave, tickCount) {
+    console.log(`=== Tick ${tickCount} ===`)
+
+    for (const creature of cave.creatures) {
+        const inv = typeof creature.getInventory === 'function' ? creature.getInventory() : null
+        const invText = formatInventory(inv)
+        console.log(`Trilobite ${creature.name}: inv=${invText}, loc=${creature.location.x},${creature.location.y}`)
+    }
+
+    let postIndex = 1
+    for (const building of cave.buildings) {
+        if (!(building instanceof BUILD.MiningPost)) {
+            continue
+        }
+        const postInv = JSON.stringify(building.getInventory())
+        const postTotal = building.getInventoryTotal()
+        const postCap = building.getCapacity()
+        console.log(`Mining Post ${postIndex}: inv=${postInv}, total=${postTotal}/${postCap}, loc=${building.location.x},${building.location.y}`)
+        postIndex++
+    }
+}
 
 async function setup()
 {
@@ -68,6 +98,29 @@ async function preload()
     //setting up game state
 
     const cave = new Cave(app,game);
+    let tickCount = 0
+
+    const runTick = () => {
+        // game.cleanActive()
+        tickCount++
+        const tickStart = performance.now()
+
+        for (let creature of cave.creatures) {
+            creature.move()
+        }
+
+        // logTickState(cave, tickCount)
+        console.log(`Creature loop time: ${(performance.now() - tickStart).toFixed(3)} ms`)
+    }
+
+    const tickPollMs = 50
+    const tickLoop = () => {
+        if (!gamePaused) {
+            runTick()
+        }
+        setTimeout(tickLoop, tickPollMs)
+    }
+    tickLoop()
     
     var queen = new BUILD.Queen()
     var spawnX = Math.floor((Math.random() * 20) - 10)
@@ -200,11 +253,17 @@ async function preload()
 
     window.addEventListener('keydown', (e) => {
         if (e.key ==='Enter') {
-            console.log('Enter pressed')
-            game.cleanActive()
-            for(let creature of cave.creatures) {
-                creature.move()
+            // console.log('Enter pressed')
+            runTick()
+        } else if (e.code === 'Space') {
+            e.preventDefault()
+            if (e.repeat) {
+                return
             }
+            gamePaused = !gamePaused
+            // console.log(`Auto-tick ${gamePaused ? 'paused' : 'running'} (50ms)`)
+        } else if (e.key === 'p' || e.key === 'P') {
+            logTickState(cave, tickCount)
         } else if (e.key ==='Escape') {
             game.cleanActive()
         } else if (e.key === 'r') {

@@ -1,19 +1,26 @@
 
 import { NodeQueue } from './queue-data.js'
-import { Game } from './game.js'
-import { toCoords, toKey } from './cave.js'
+import { toKey } from './cave.js'
 
 export class Creature {
     constructor(name,location,sprite,game) {
         this.name = name
         this.queue = new NodeQueue()
+        this.pathPreview = []
+        this.inventory = {
+            type: null,
+            amount: 0
+        }
+        this.inventoryCapacity = 5
         this.location = location
         this.sprite = sprite
         this.game = game
         this.cave = null
+        
+        this.assignment = "unassigned"
 
         sprite.on('mouseup', (interactionEvent) => {
-            if (this.game.buildMode) {
+            if (this.game.buildMode || this.game.dragging) {
                 return
             }
             
@@ -30,54 +37,216 @@ export class Creature {
         })
     }
 
-    move() {
-
-        let myPath = this.cave.bfsPath(toKey(this.location),toKey(this.queue.getRear()))
+    clearActionQueue() {
         this.queue.clear()
+        this.pathPreview = []
+    }
 
-        if(!myPath) {
-            return null
-        } 
-        
-        //warn user that path was interrupted if it returns null
+    getInventory() {
+        return this.inventory
+    }
 
-        myPath.shift()
-        for (let i = 0; i < myPath.length; i++) {
-            this.queue.enqueue(myPath[i])
+    hasInventory() {
+        return this.inventory.amount > 0
+    }
+
+    getInventoryCapacity() {
+        return this.inventoryCapacity
+    }
+
+    getInventorySpace() {
+        return Math.max(0, this.inventoryCapacity - this.inventory.amount)
+    }
+
+    addToInventory(resourceType, amount) {
+        if (typeof resourceType !== 'string' || !Number.isFinite(amount) || amount <= 0) {
+            return 0
         }
 
-        let next = this.queue.dequeue()
+        if (!this.hasInventory()) {
+            this.inventory.type = resourceType
+        }
 
-        if (next === null) {
-            return null
-        } else {
+        if (this.inventory.type !== resourceType) {
+            return 0
+        }
 
-            let moveX = this.location.x - next.x
-            let moveY = this.location.y - next.y
+        const added = Math.min(this.getInventorySpace(), amount)
+        this.inventory.amount += added
 
-            this.sprite.x = this.sprite.x + (80 * this.game.currentScale * -moveX)
-            this.sprite.y = this.sprite.y + (80 * this.game.currentScale * -moveY)
+        return added
+    }
 
-            this.sprite.baseX = this.sprite.baseX + (80 * -moveX)
-            this.sprite.baseY = this.sprite.baseY + (80 * -moveY)
+    removeFromInventory(amount) {
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return 0
+        }
 
-            if (moveX === 0) {
-                if (-moveY === 1) {
-                    this.sprite.rotation = Math.PI
-                } else {
-                    this.sprite.rotation = 0
-                }
-            } else {
-                if (-moveX === 1) {
-                    this.sprite.rotation = Math.PI / 2
-                } else {
-                    this.sprite.rotation = Math.PI * 3 / 2
-                }
+        const removed = Math.min(this.inventory.amount, amount)
+        this.inventory.amount -= removed
+
+        if (this.inventory.amount === 0) {
+            this.inventory.type = null
+        }
+
+        return removed
+    }
+
+    clearInventory() {
+        this.inventory.type = null
+        this.inventory.amount = 0
+    }
+
+    enqueueAction(actionFn) {
+        if (typeof actionFn !== 'function') {
+            return false
+        }
+        this.queue.enqueue(actionFn)
+        return true
+    }
+
+    getNavigationFallback() {
+        if (this.assignment === "miner" && typeof this.minerStep1 === 'function') {
+            return () => this.minerStep1()
+        }
+        return null
+    }
+
+    runNavigationFallback(fallbackFn) {
+        this.clearActionQueue()
+        if (typeof fallbackFn === 'function') {
+            this.enqueueAction(() => fallbackFn.call(this))
+        }
+        return false
+    }
+
+    recoverNavigation(destination, fallbackFn) {
+        this.clearActionQueue()
+
+        if (!destination) {
+            return this.runNavigationFallback(fallbackFn)
+        }
+
+        const reroute = this.cave.bfsPath(toKey(this.location), toKey(destination))
+        if (reroute && reroute.length > 1) {
+            this._enqueueNavigationPath(reroute, destination, fallbackFn, false)
+            return false
+        }
+
+        if (reroute && reroute.length === 1) {
+            return true
+        }
+
+        return this.runNavigationFallback(fallbackFn)
+    }
+
+    executeNavigationStep(next, destination, fallbackFn) {
+        const result = this.cave.moveCreature(this, next)
+        if (result === false) {
+            return this.recoverNavigation(destination, fallbackFn)
+        }
+
+        if (this.pathPreview.length > 0) {
+            this.pathPreview.shift()
+        }
+        return result
+    }
+
+    _enqueueNavigationPath(path, destination, fallbackFn, clearExisting) {
+        if (clearExisting) {
+            this.clearActionQueue()
+        }
+        if (!path || path.length < 2) {
+            return false
+        }
+
+        const target = {
+            x: destination.x,
+            y: destination.y
+        }
+        const steps = [...path]
+        steps.shift()
+
+        for (const step of steps) {
+            const next = { x: step.x, y: step.y }
+            this.pathPreview.push(next)
+
+            this.enqueueAction(() => {
+                return this.executeNavigationStep(next, target, fallbackFn)
+            })
+        }
+
+        return true
+    }
+
+    navigateTo(destination, fallbackFn = this.getNavigationFallback(), clearExisting = true) {
+        if (!destination) {
+            return this.runNavigationFallback(fallbackFn)
+        }
+
+        const path = this.cave.bfsPath(toKey(this.location), toKey(destination))
+        if (!path) {
+            return this.runNavigationFallback(fallbackFn)
+        }
+        if (path.length < 2) {
+            return true
+        }
+
+        return this._enqueueNavigationPath(path, destination, fallbackFn, clearExisting)
+    }
+
+    queueMovePath(path, fallbackFn = this.getNavigationFallback()) {
+        if (!path || path.length === 0) {
+            return false
+        }
+
+        const destination = path[path.length - 1]
+        if (path.length < 2) {
+            return true
+        }
+
+        return this._enqueueNavigationPath(path, destination, fallbackFn, true)
+    }
+
+    appendMovePath(path, fallbackFn = this.getNavigationFallback()) {
+        if (!path || path.length === 0) {
+            return false
+        }
+
+        const destination = path[path.length - 1]
+        if (path.length < 2) {
+            return true
+        }
+
+        return this._enqueueNavigationPath(path, destination, fallbackFn, false)
+    }
+
+    getQueuedPathPreview() {
+        if (this.pathPreview.length === 0) {
+            return []
+        }
+        return [{ x: this.location.x, y: this.location.y }, ...this.pathPreview]
+    }
+
+    move() {
+        let nextAction = this.queue.dequeue()
+
+        if (nextAction === null && typeof this.getBehavior === 'function') {
+            const behavior = this.getBehavior()
+            if (typeof behavior === 'function') {
+                behavior.call(this)
+                nextAction = this.queue.dequeue()
             }
-
-            this.location = next
-            return next
         }
+
+        if (nextAction === null) {
+            return null
+        }
+        return nextAction()
+    }
+
+    performMove(next) {
+        return this.cave.moveCreature(this, next)
     }
 
     getActions() {

@@ -58,7 +58,8 @@ export class Game {
         this.unlockedBuildings = [
             new BUILD.Factory(BUILD.AlgaeFarm,this),
             new BUILD.Factory(BUILD.Storage,this),
-            new BUILD.Factory(BUILD.Smith,this)
+            new BUILD.Factory(BUILD.Smith,this),
+            new BUILD.Factory(BUILD.MiningPost,this)
         ]
 
 
@@ -103,9 +104,8 @@ export class Game {
                         this.selection.baseX = s.sprite.baseX
                         this.selection.baseY = s.sprite.baseY
                         this.selection.visible = true
-                        if (this.object.queue.peek()) {
-                            let myPath = [...this.object.queue.toArray()]
-                            myPath.unshift(this.object.location)
+                        const myPath = this.object.getQueuedPathPreview()
+                        if (myPath.length > 1) {
                             this.game.displayPath(myPath,this.selectedPaths)
                         }
                     } else if (this.object instanceof BUILD.Building) {
@@ -201,6 +201,8 @@ export class Game {
             return
         }
 
+        const changedKeys = [emptyCoords]
+
         myTile.texture = PIXI.Texture.from('empty')
         let newEmpty = cave.getTile(emptyCoords)
         newEmpty.setBase('empty')
@@ -242,6 +244,7 @@ export class Game {
             let wallTile = cave.addTile(newCoords)
             wallTile.setBase('wall')
             wallTile.creatureCanFit = false
+            changedKeys.push(newCoords)
 
             let newDelts = new Map();
             newDelts.set('n',{x:0,y:-1})
@@ -277,6 +280,10 @@ export class Game {
                 this.whenWallMined(interactionEvent, newTile, cave, newCoords)
             })
         }
+
+        if (typeof cave.notifyMineableTilesChanged === 'function') {
+            cave.notifyMineableTilesChanged(changedKeys)
+        }
     }
 
     emptyTileClicked(coords,myCave) {
@@ -285,14 +292,10 @@ export class Game {
 
             let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
             if(!path) {
-                this.selected.setCreature(null)
+                this.selected.setSelected(null)
                 return
             } 
-            path.shift()
-            this.selected.object.queue.clear()
-            for (let i = 0; i< path.length;i++) {
-                this.selected.object.queue.enqueue(path[i])
-            }
+            this.selected.object.queueMovePath(path)
             this.selected.setSelected(null)
         }
 

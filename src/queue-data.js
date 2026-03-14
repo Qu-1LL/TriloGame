@@ -53,7 +53,7 @@ export class NodeQueue {
     }
 
     clear() {
-        this.font = null
+        this.front = null
         this.rear = null
         this.length = 0
     }

@@ -5,14 +5,19 @@ import { Ore } from './ores.js'
 
 import { Game } from './game.js'
 
-const degradeMult = 12
+const sizeMult = 30
+//Usually 12 ^^^
 const holeLimit = 10
-const degradeLimit = 3
+const degradeLimit = 2.75
+//Usually 3
 const degradeDeviation = 0.7
-const cavernCount = 100
+const cavernCount = 25
+//Usually 100 ^^^
 const radius = 20
+//Usually 20
 const oreMult = 300
-const oreDist = 10
+const oreDist = 8
+//Usually 10
 
 
 export function toCoords(coords) {
@@ -39,10 +44,11 @@ export class Cave extends Graph {
 
     constructor (app, game) {
         super()
-        while( this.tiles.size < 28000) {
-            this.tiles = new Map();
-            this.#generateCaveShrink();
-        }
+        // while( this.tiles.size < 28000) {
+        //     this.tiles = new Map();
+        //     this.#generateCaveShrink();
+        // }
+        this.#generateCaveShrink();
         this.creatures = new Set();
         this.buildings = new Set();
         this.app = app
@@ -139,7 +145,7 @@ export class Cave extends Graph {
             }
         }
         
-        for (let i = 0; i < 2 + (radius / degradeMult) + (radius / cavernCount) ; i++) {
+        for (let i = 0; i < 2 + (radius / sizeMult) + (radius / cavernCount) ; i++) {
             this.#degradeCave()
         }
 
@@ -316,6 +322,10 @@ export class Cave extends Graph {
             }
         }
 
+        if (typeof building.onBuilt === 'function') {
+            building.onBuilt(this)
+        }
+
         let tileSprite = this.getTile(location.x+","+location.y).sprite
 
         sprite.x = tileSprite.x + ((building.size.x - 1) * (40 * this.game.currentScale))
@@ -342,6 +352,10 @@ export class Cave extends Graph {
         });
 
         sprite.on('mouseup', (event) => {
+            if (this.game.dragging) {
+                return;
+            }
+
             let pos = event.data.global;
 
             let carryModes = this.game.movePath || this.game.buildMode
@@ -376,6 +390,18 @@ export class Cave extends Graph {
         return true
     }
 
+    notifyMineableTilesChanged(tileKeys) {
+        if (!Array.isArray(tileKeys) || tileKeys.length === 0) {
+            return
+        }
+
+        for (const building of this.buildings) {
+            if (typeof building.invalidateMineableQueuesForKeys === 'function') {
+                building.invalidateMineableQueuesForKeys(tileKeys)
+            }
+        }
+    }
+
     spawn(creature,tile) {
 
         if (tile.getBase() == 'wall' || !tile.creatureFits()) {
@@ -399,23 +425,75 @@ export class Cave extends Graph {
         return true
     }
 
+    moveCreature(creature, nextLocation) {
+        if (!creature || !nextLocation) {
+            return false
+        }
+
+        const current = toCoords(creature.location)
+        const next = toCoords(nextLocation)
+
+        if (!Number.isFinite(next.x) || !Number.isFinite(next.y)) {
+            return false
+        }
+
+        const nextTile = this.getTile(toKey(next))
+        if (nextTile === undefined || !nextTile.creatureFits()) {
+            return false
+        }
+
+        const moveDist = Math.abs(current.x - next.x) + Math.abs(current.y - next.y)
+        if (moveDist !== 1) {
+            return false
+        }
+
+        let moveX = current.x - next.x
+        let moveY = current.y - next.y
+
+        creature.sprite.x = creature.sprite.x + (80 * creature.game.currentScale * -moveX)
+        creature.sprite.y = creature.sprite.y + (80 * creature.game.currentScale * -moveY)
+
+        creature.sprite.baseX = creature.sprite.baseX + (80 * -moveX)
+        creature.sprite.baseY = creature.sprite.baseY + (80 * -moveY)
+
+        if (moveX === 0) {
+            if (-moveY === 1) {
+                creature.sprite.rotation = Math.PI
+            } else {
+                creature.sprite.rotation = 0
+            }
+        } else {
+            if (-moveX === 1) {
+                creature.sprite.rotation = Math.PI / 2
+            } else {
+                creature.sprite.rotation = Math.PI * 3 / 2
+            }
+        }
+
+        creature.location = { x: next.x, y: next.y }
+        return creature.location
+    }
+
     bfsPath(startKey, goalKey) {
 
         const queue = [startKey];
+        let queueHead = 0
         const visited = new Set([startKey]);
         const cameFrom = new Map();
 
         let timeCount = 0
 
-        while (queue.length > 0 && timeCount < 7850) {
+        while (queueHead < queue.length && timeCount < 7850) {
 
-            const currentKey = queue.shift();
+            const currentKey = queue[queueHead];
+            queueHead++;
 
             if (currentKey === goalKey) {
                 let path = [];
                 let k = goalKey;
                 while (k !== undefined) {
                     path.push(toCoords(k));
+                    path[path.length - 1]["type"] = "move";
                     k = cameFrom.get(k);
                 }
                 path.reverse();

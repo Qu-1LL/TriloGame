@@ -153,6 +153,25 @@ export class Menu {
         mineText.y = mineButton.position.y + (7 * this.scale)
         this.addMenuItem(mineText,2,1,false)
 
+        mineButton.on('mouseup', () => {
+            this.object.assignment = "miner"
+            this.object.clearActionQueue()
+            const behavior = this.object.getBehavior()
+            if (typeof behavior === 'function') {
+                behavior.call(this.object)
+            }
+            this.game.cleanActive()
+        })
+
+        let farmButton = PIXI.Sprite.from('window_4x1')
+        farmButton.x = this.bounds.minX + (10 * this.scale)
+        farmButton.y = mineButton.y + mineButton.height + (10 * this.scale)
+        this.addMenuItem(farmButton,1,0.6,true)
+        let farmText = new PIXI.Text({text: 'Farm',style: style })
+        farmText.x = farmButton.position.x + (15 * this.scale)
+        farmText.y = farmButton.position.y + (7 * this.scale)
+        this.addMenuItem(farmText,2,1,false)
+
         let otherChoices = this.object.getActions()
 
     }
