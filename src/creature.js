@@ -109,6 +109,9 @@ export class Creature {
         if (this.assignment === "miner" && typeof this.minerStep1 === 'function') {
             return () => this.minerStep1()
         }
+        if (this.assignment === "farmer" && typeof this.farmerStep1 === 'function') {
+            return () => this.farmerStep1()
+        }
         return null
     }
 

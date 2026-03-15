@@ -113,12 +113,12 @@ async function preload()
         console.log(`Creature loop time: ${(performance.now() - tickStart).toFixed(3)} ms`)
     }
 
-    const tickPollMs = 50
+    let tickSpeedMs = 250
     const tickLoop = () => {
         if (!gamePaused) {
             runTick()
         }
-        setTimeout(tickLoop, tickPollMs)
+        setTimeout(tickLoop, tickSpeedMs)
     }
     tickLoop()
     
@@ -261,7 +261,15 @@ async function preload()
                 return
             }
             gamePaused = !gamePaused
-            // console.log(`Auto-tick ${gamePaused ? 'paused' : 'running'} (50ms)`)
+            // console.log(`Auto-tick ${gamePaused ? 'paused' : 'running'} (${tickSpeedMs}ms)`)
+        } else if (e.key === '1') {
+            tickSpeedMs = 500
+        } else if (e.key === '2') {
+            tickSpeedMs = 250
+        } else if (e.key === '3') {
+            tickSpeedMs = 100
+        } else if (e.key === '4') {
+            tickSpeedMs = 50
         } else if (e.key === 'p' || e.key === 'P') {
             logTickState(cave, tickCount)
         } else if (e.key ==='Escape') {

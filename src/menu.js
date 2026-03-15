@@ -172,6 +172,16 @@ export class Menu {
         farmText.y = farmButton.position.y + (7 * this.scale)
         this.addMenuItem(farmText,2,1,false)
 
+        farmButton.on('mouseup', () => {
+            this.object.assignment = "farmer"
+            this.object.clearActionQueue()
+            const behavior = this.object.getBehavior()
+            if (typeof behavior === 'function') {
+                behavior.call(this.object)
+            }
+            this.game.cleanActive()
+        })
+
         let otherChoices = this.object.getActions()
 
     }

@@ -403,16 +403,24 @@ export class Cave extends Graph {
     }
 
     spawn(creature,tile) {
+        if (!creature || !tile || !tile.sprite) {
+            return false
+        }
 
         if (tile.getBase() == 'wall' || !tile.creatureFits()) {
             return false
         }
 
+        const spawnLocation = toCoords(tile.key)
+        creature.location = { x: spawnLocation.x, y: spawnLocation.y }
+
+        const tileSprite = tile.sprite
         creature.sprite.anchor.set(0.5)
-        creature.sprite.x = (this.game.midx) + (80 * creature.location.x * this.game.currentScale)
-        creature.sprite.y = (this.game.midy) + (80 * creature.location.y * this.game.currentScale)
-        creature.sprite.baseX = (this.game.midx) + (80 * creature.location.x) 
-        creature.sprite.baseY = (this.game.midy) + (80 * creature.location.y)
+        creature.sprite.x = tileSprite.x
+        creature.sprite.y = tileSprite.y
+        creature.sprite.baseX = tileSprite.baseX
+        creature.sprite.baseY = tileSprite.baseY
+        creature.sprite.scale.set(this.game.currentScale)
         creature.sprite.interactive = true;
         creature.sprite.buttonMode = true;
         creature.sprite.zIndex = 2

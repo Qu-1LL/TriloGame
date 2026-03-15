@@ -554,27 +554,319 @@ export class Queen extends Building {
         super('Queen',{x:3, y:3},[[1,1,1],[1,0,1],[1,1,1]],game,true)
         this.sprite = PIXI.Sprite.from('Queen')
 
+        this.algaeQuota = 20
+        this.algaeCount = 0
+        this.broodlingCount = 1
+
         this.description = `The one and only Queen of your colony! Protect her at all costs!`
+    }
+
+    getAlgaeQuota() {
+        return this.algaeQuota
+    }
+
+    getAlgaeCount() {
+        return this.algaeCount
+    }
+
+    getFeedTiles() {
+        const feedTiles = []
+        for (const tile of this.tileArray) {
+            if (tile && tile.creatureFits()) {
+                feedTiles.push(tile)
+            }
+        }
+        return feedTiles
+    }
+
+    canBeFedBy(creature) {
+        if (!creature || !creature.location) {
+            return false
+        }
+
+        const creatureKey = toKey(creature.location)
+        for (const tile of this.getFeedTiles()) {
+            if (tile.key === creatureKey) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    getBirthTile() {
+        const feedTiles = this.getFeedTiles()
+        if (feedTiles.length === 0) {
+            return null
+        }
+
+        const randomIndex = Math.floor(Math.random() * feedTiles.length)
+        return feedTiles[randomIndex]
+    }
+
+    birth(cave, feeder = null) {
+        const activeCave = cave ?? feeder?.cave
+        if (!activeCave || !feeder || typeof feeder.constructor !== 'function') {
+            return false
+        }
+
+        const birthTile = this.getBirthTile()
+        if (!birthTile || !birthTile.creatureFits()) {
+            return false
+        }
+
+        const spawnLocation = keyToCoords(birthTile.key)
+        const spawnName = `Broodling ${this.broodlingCount}`
+        this.broodlingCount++
+
+        const brood = new feeder.constructor(spawnName, spawnLocation, feeder.game)
+        return activeCave.spawn(brood, birthTile)
+    }
+
+    feedAlgae(amount, creature = null, cave = null) {
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return { accepted: 0, spawnCount: 0 }
+        }
+
+        if (creature && !this.canBeFedBy(creature)) {
+            return { accepted: 0, spawnCount: 0 }
+        }
+
+        this.algaeCount += amount
+
+        let spawnCount = 0
+        while (this.algaeCount >= this.algaeQuota) {
+            this.algaeCount -= this.algaeQuota
+            this.algaeQuota += 5
+            if (this.birth(cave, creature)) {
+                spawnCount++
+            }
+        }
+
+        return {
+            accepted: amount,
+            spawnCount
+        }
     }
 }
 
 export class AlgaeFarm extends Building {
 
     constructor(game) {
-        super('Algae Farm',{x:2,y:3},[[0,0],[0,0],[0,0]],game,false)
+        super('Algae Farm',{x:2,y:3},[[1,1],[1,1],[1,1]],game,false)
         this.sprite = PIXI.Sprite.from('Algae Farm')
 
-        this.rate = 2
-        this.capacity = 20
+        this.period = 30
+        this.growth = 0
+        this.harvestYield = 5
+        this.assignments = new Set()
 
-        this.description = `A farm for you to produce algae automatically! Generates ${this.getRate()} algae per turn with a capacity of ${this.getCapacity()}.`
+        this.description = `A passable algae farm. Worker trilobites harvest ${this.getHarvestYield()} algae when random < growth/period.`
     }
 
-    getRate() {
-        return this.rate
+    getPeriod() {
+        return this.period
     }
-    getCapacity() {
-        return this.capacity
+
+    getGrowth() {
+        return this.growth
+    }
+
+    getHarvestYield() {
+        return this.harvestYield
+    }
+
+    assign(creature) {
+        if (!creature) {
+            return false
+        }
+        this.assignments.add(creature)
+        return true
+    }
+
+    removeAssignment(creature) {
+        this.assignments.delete(creature)
+    }
+
+    getVolume() {
+        return this.assignments.size
+    }
+
+    getPassableTileMap() {
+        const tileMap = new Map()
+        for (const tile of this.tileArray) {
+            if (!tile || !tile.creatureFits()) {
+                continue
+            }
+            tileMap.set(tile.key, tile)
+        }
+        return tileMap
+    }
+
+    isLocationOnFarm(location) {
+        const locationKey = normalizeTileKey(location)
+        if (!locationKey) {
+            return false
+        }
+
+        const tile = this.getPassableTileMap().get(locationKey)
+        return tile !== undefined
+    }
+
+    getApproachTile(startLocation) {
+        const passableTiles = [...this.getPassableTileMap().values()]
+        if (passableTiles.length === 0) {
+            return null
+        }
+
+        let origin = keyToCoords(passableTiles[0].key)
+        if (Number.isFinite(startLocation?.x) && Number.isFinite(startLocation?.y)) {
+            origin = startLocation
+        }
+
+        let bestTile = passableTiles[0]
+        let bestDist = squaredDistance(origin, keyToCoords(bestTile.key))
+
+        for (const tile of passableTiles) {
+            const dist = squaredDistance(origin, keyToCoords(tile.key))
+            if (dist < bestDist) {
+                bestDist = dist
+                bestTile = tile
+            }
+        }
+
+        return keyToCoords(bestTile.key)
+    }
+
+    findFarmPath(startKey, goalKey, passableTileMap) {
+        if (!startKey || !goalKey || !passableTileMap.has(startKey) || !passableTileMap.has(goalKey)) {
+            return null
+        }
+
+        if (startKey === goalKey) {
+            return [startKey]
+        }
+
+        const queue = [startKey]
+        let queueHead = 0
+        const visited = new Set([startKey])
+        const cameFrom = new Map()
+
+        while (queueHead < queue.length) {
+            const currentKey = queue[queueHead]
+            queueHead++
+
+            if (currentKey === goalKey) {
+                const path = []
+                let key = goalKey
+                while (key !== undefined) {
+                    path.push(key)
+                    key = cameFrom.get(key)
+                }
+                path.reverse()
+                return path
+            }
+
+            const currentTile = passableTileMap.get(currentKey)
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (!passableTileMap.has(neighbor.key) || visited.has(neighbor.key)) {
+                    continue
+                }
+                visited.add(neighbor.key)
+                cameFrom.set(neighbor.key, currentKey)
+                queue.push(neighbor.key)
+            }
+        }
+
+        return null
+    }
+
+    findNextUnvisitedKey(currentKey, unvisitedKeys, passableTileMap) {
+        let bestKey = null
+        let bestLength = Infinity
+
+        for (const candidateKey of unvisitedKeys) {
+            const candidatePath = this.findFarmPath(currentKey, candidateKey, passableTileMap)
+            if (!candidatePath) {
+                continue
+            }
+
+            if (candidatePath.length < bestLength) {
+                bestLength = candidatePath.length
+                bestKey = candidateKey
+            }
+        }
+
+        return bestKey
+    }
+
+    getPath(currentPositionOnFarm) {
+        const passableTileMap = this.getPassableTileMap()
+        if (passableTileMap.size === 0) {
+            return []
+        }
+
+        let originKey = normalizeTileKey(currentPositionOnFarm)
+        if (!originKey || !passableTileMap.has(originKey)) {
+            const approachTile = this.getApproachTile(currentPositionOnFarm)
+            originKey = approachTile ? toKey(approachTile) : [...passableTileMap.keys()][0]
+        }
+
+        const route = [originKey]
+        const unvisited = new Set(passableTileMap.keys())
+        unvisited.delete(originKey)
+        let currentKey = originKey
+
+        while (unvisited.size > 0) {
+            const nextKey = this.findNextUnvisitedKey(currentKey, unvisited, passableTileMap)
+            if (!nextKey) {
+                break
+            }
+
+            const segment = this.findFarmPath(currentKey, nextKey, passableTileMap)
+            if (!segment || segment.length < 2) {
+                unvisited.delete(nextKey)
+                continue
+            }
+
+            for (let i = 1; i < segment.length; i++) {
+                route.push(segment[i])
+                unvisited.delete(segment[i])
+            }
+
+            currentKey = route[route.length - 1]
+        }
+
+        if (currentKey !== originKey) {
+            const returnPath = this.findFarmPath(currentKey, originKey, passableTileMap)
+            if (returnPath && returnPath.length > 1) {
+                for (let i = 1; i < returnPath.length; i++) {
+                    route.push(returnPath[i])
+                }
+            }
+        }
+
+        return route.map((key) => keyToCoords(key))
+    }
+
+    tryHarvest(creature) {
+        if (!creature || typeof creature.addToInventory !== 'function') {
+            return false
+        }
+
+        this.growth++
+        const harvestChance = this.growth / this.period
+        if (Math.random() >= harvestChance) {
+            return false
+        }
+
+        const harvested = creature.addToInventory('Algae', this.harvestYield)
+        if (harvested !== this.harvestYield) {
+            return false
+        }
+
+        this.growth = 0
+        return true
     }
 
 }
