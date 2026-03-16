@@ -727,6 +727,13 @@ export class Trilobite extends Creature {
         if (typeof this.cave.notifyMineableTilesChanged === 'function') {
             this.cave.notifyMineableTilesChanged([tileKey])
         }
+        if (typeof this.game.onTilesChanged === 'function') {
+            this.game.onTilesChanged([{
+                key: tileKey,
+                base: tile.getBase(),
+                creatureCanFit: tile.creatureFits()
+            }])
+        }
         return true
     }
 

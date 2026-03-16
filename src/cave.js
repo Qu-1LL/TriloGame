@@ -308,11 +308,13 @@ export class Cave extends Graph {
         }
         this.buildings.add(building)
         building.setLocation(location.x,location.y)
+        const changedKeys = []
 
         for(let x = 0; x < building.size.x; x++) {
             for (let y = 0; y < building.size.y; y++) {
                 let theseCoords = (location.x + x) + "," + (location.y + y)
                 let curTile = this.tiles.get(theseCoords)
+                changedKeys.push(theseCoords)
                 building.tileArray.push(curTile)
                 if (building.openMap[y][x] > 1) {
                     continue
@@ -386,6 +388,24 @@ export class Cave extends Graph {
         });
 
         this.game.tileContainer.addChild(sprite)
+
+        if (typeof this.game.onTilesChanged === 'function') {
+            const tileUpdates = []
+            for (const key of changedKeys) {
+                const tile = this.getTile(key)
+                if (!tile) {
+                    continue
+                }
+                tileUpdates.push({
+                    key,
+                    base: tile.getBase(),
+                    creatureCanFit: tile.creatureFits()
+                })
+            }
+            if (tileUpdates.length > 0) {
+                this.game.onTilesChanged(tileUpdates)
+            }
+        }
 
         return true
     }

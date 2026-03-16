@@ -43,6 +43,11 @@ export class Game {
             rotation: 0
         }
 
+        // Optional worker bridge hooks. Main thread may attach these.
+        this.onQueueMovePath = null
+        this.onBuildRequest = null
+        this.onTilesChanged = null
+
         //practical variables
 
         this.resources = {
@@ -284,6 +289,25 @@ export class Game {
         if (typeof cave.notifyMineableTilesChanged === 'function') {
             cave.notifyMineableTilesChanged(changedKeys)
         }
+
+        if (typeof this.onTilesChanged === 'function') {
+            const tileUpdates = []
+            for (const key of changedKeys) {
+                const tile = cave.getTile(key)
+                if (!tile) {
+                    continue
+                }
+                tileUpdates.push({
+                    key,
+                    base: tile.getBase(),
+                    creatureCanFit: tile.creatureFits()
+                })
+            }
+
+            if (tileUpdates.length > 0) {
+                this.onTilesChanged(tileUpdates)
+            }
+        }
     }
 
     emptyTileClicked(coords,myCave) {
@@ -294,8 +318,20 @@ export class Game {
             if(!path) {
                 this.selected.setSelected(null)
                 return
-            } 
-            this.selected.object.queueMovePath(path)
+            }
+
+            if (typeof this.onQueueMovePath === 'function') {
+                const handled = this.onQueueMovePath({
+                    creature: this.selected.object,
+                    destination: toCoords(coords),
+                    path
+                })
+                if (handled !== false) {
+                    this.selected.setSelected(null)
+                }
+            } else {
+                this.selected.object.queueMovePath(path)
+            }
             this.selected.setSelected(null)
         }
 
@@ -312,9 +348,23 @@ export class Game {
         }
 
         if(this.buildMode && !this.dragging) {
-            if(myCave.canBuild(this.floatingBuilding.building,toCoords(coords))) {
+            const buildLocation = toCoords(coords)
+            if (typeof this.onBuildRequest === 'function') {
+                const handled = this.onBuildRequest({
+                    cave: myCave,
+                    building: this.floatingBuilding.building,
+                    sprite: this.floatingBuilding.sprite,
+                    location: buildLocation,
+                    rotation: this.floatingBuilding.rotation
+                })
+                if (handled !== false) {
+                    return
+                }
+            }
+
+            if(myCave.canBuild(this.floatingBuilding.building,buildLocation)) {
                 this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
-                myCave.build(this.floatingBuilding.building,toCoords(coords),this.floatingBuilding.sprite)
+                myCave.build(this.floatingBuilding.building,buildLocation,this.floatingBuilding.sprite)
                 this.floatingBuilding.sprite = null
                 this.buildMode = false
                 this.cleanActive()
