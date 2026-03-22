@@ -7,8 +7,8 @@ export class Creature {
         this.name = name
         this.queue = new NodeQueue()
         this.pathPreview = []
-        this.health = 10
-        this.damage = 1
+        this.health = 20
+        this.damage = 5
         this.location = location
         this.sprite = sprite
         this.game = game
