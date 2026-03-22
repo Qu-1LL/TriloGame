@@ -705,8 +705,7 @@ export class Trilobite extends Creature {
                 return false
             }
 
-            this.game.whenWallMined({ currentTarget: tile.sprite }, tile.sprite, this.cave, tileKey)
-            if (this.cave.getTile(tileKey).getBase() === 'wall') {
+            if (!this.game.mineTile(this.cave, tileKey, 'creature')) {
                 this.removeFromInventory(mineYield)
                 return false
             }
@@ -722,11 +721,11 @@ export class Trilobite extends Creature {
             return false
         }
 
-        tile.setBase('empty')
-        tile.sprite.texture = PIXI.Texture.from('empty')
-        if (typeof this.cave.notifyMineableTilesChanged === 'function') {
-            this.cave.notifyMineableTilesChanged([tileKey])
+        if (!this.game.mineTile(this.cave, tileKey, 'creature')) {
+            this.removeFromInventory(mineYield)
+            return false
         }
+
         return true
     }
 

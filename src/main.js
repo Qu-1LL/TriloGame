@@ -38,6 +38,24 @@ function logTickState(cave, tickCount) {
     }
 }
 
+function formatStatsSnapshot(stats) {
+    const entries = Object.entries(stats ?? {})
+    if (entries.length === 0) {
+        return '  (no stats tracked)'
+    }
+
+    const longestKey = entries.reduce((max, [key]) => Math.max(max, key.length), 0)
+    return entries
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => `  ${key.padEnd(longestKey)} : ${value}`)
+        .join('\n')
+}
+
+function logStatsSnapshot(game, tickCount) {
+    console.log(`=== Stats At Tick ${tickCount} ===`)
+    console.log(formatStatsSnapshot(game.stats.getAll()))
+}
+
 async function setup()
 {
     // Intialize the application.
@@ -70,6 +88,7 @@ async function preload()
         { alias: 'Storage', src: `${base}assets/Storage.png` },
         { alias: 'Smith', src: `${base}assets/Smith.png` },
         { alias: 'Mining Post', src: `${base}assets/MiningPost.png`},
+        { alias: 'Radar', src: `${base}assets/Radar.png` },
 
         { alias: 'path', src: `${base}assets/Path.png` },
         { alias: 'orepath', src: `${base}assets/OrePath.png` },
@@ -109,6 +128,16 @@ async function preload()
             creature.move()
         }
 
+        for (const building of cave.buildings) {
+            if (typeof building.tick === 'function') {
+                building.tick(cave)
+            }
+        }
+
+        if (tickCount % 20 === 0) {
+            logStatsSnapshot(game, tickCount)
+        }
+
         // logTickState(cave, tickCount)
         console.log(`Creature loop time: ${(performance.now() - tickStart).toFixed(3)} ms`)
     }
@@ -142,6 +171,8 @@ async function preload()
 
     trilo = new Trilobite('Sigma',{x:spawnX,y:spawnY+2},game)
     cave.spawn(trilo,cave.getTile(spawnX+','+(spawnY+2)))
+
+    cave.revealCave()
 
     game.totalXDelt = spawnX * 80 + 80
     game.totalYDelt = spawnY * 80 + 80

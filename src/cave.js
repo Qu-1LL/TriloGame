@@ -83,6 +83,7 @@ export class Cave extends Graph {
             myTile.baseX = myTile.position.x
             myTile.baseY = myTile.position.y
             myTile.zIndex = 0
+            myTile.visible = false
     
             this.game.tileContainer.addChild(myTile)
     
@@ -388,6 +389,195 @@ export class Cave extends Graph {
         this.game.tileContainer.addChild(sprite)
 
         return true
+    }
+
+    getQueenBuilding() {
+        for (const building of this.buildings) {
+            if (!building) {
+                continue
+            }
+
+            if (building.name === 'Queen' || building.constructor?.name === 'Queen') {
+                return building
+            }
+        }
+
+        return null
+    }
+
+    revealTile(tile) {
+        if (!tile?.sprite || tile.sprite.visible !== false) {
+            return 0
+        }
+
+        tile.sprite.visible = true
+        return 1
+    }
+
+    revealTiles(tiles) {
+        if (!Array.isArray(tiles) || tiles.length === 0) {
+            return 0
+        }
+
+        let revealedCount = 0
+        for (const tile of tiles) {
+            revealedCount += this.revealTile(tile)
+        }
+
+        return revealedCount
+    }
+
+    revealTilesInRadius(centerLocations, radius) {
+        if (!Array.isArray(centerLocations) || centerLocations.length === 0 || !Number.isFinite(radius) || radius < 0) {
+            return 0
+        }
+
+        const radiusSq = radius * radius
+        let revealedCount = 0
+
+        for (const tile of this.getTiles()) {
+            const tileCoords = toCoords(tile.key)
+            for (const center of centerLocations) {
+                if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) {
+                    continue
+                }
+
+                const dx = tileCoords.x - center.x
+                const dy = tileCoords.y - center.y
+                if ((dx * dx) + (dy * dy) > radiusSq) {
+                    continue
+                }
+
+                revealedCount += this.revealTile(tile)
+                break
+            }
+        }
+
+        return revealedCount
+    }
+
+    revealTilesBetweenRadii(centerLocations, innerRadius, outerRadius) {
+        if (!Array.isArray(centerLocations) || centerLocations.length === 0 || !Number.isFinite(outerRadius) || outerRadius < 0) {
+            return 0
+        }
+
+        const minRadius = Math.max(-1, Number.isFinite(innerRadius) ? innerRadius : -1)
+        if (outerRadius <= minRadius) {
+            return 0
+        }
+
+        let minX = Infinity
+        let maxX = -Infinity
+        let minY = Infinity
+        let maxY = -Infinity
+        const validCenters = []
+
+        for (const center of centerLocations) {
+            if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) {
+                continue
+            }
+
+            validCenters.push(center)
+            if (center.x < minX) {
+                minX = center.x
+            }
+            if (center.x > maxX) {
+                maxX = center.x
+            }
+            if (center.y < minY) {
+                minY = center.y
+            }
+            if (center.y > maxY) {
+                maxY = center.y
+            }
+        }
+
+        if (validCenters.length === 0) {
+            return 0
+        }
+
+        const innerRadiusSq = minRadius * minRadius
+        const outerRadiusSq = outerRadius * outerRadius
+        let revealedCount = 0
+
+        for (let x = Math.floor(minX - outerRadius); x <= Math.ceil(maxX + outerRadius); x++) {
+            for (let y = Math.floor(minY - outerRadius); y <= Math.ceil(maxY + outerRadius); y++) {
+                const tile = this.getTile(x + "," + y)
+                if (!tile) {
+                    continue
+                }
+
+                let insideOuter = false
+                let insideInner = false
+
+                for (const center of validCenters) {
+                    const dx = x - center.x
+                    const dy = y - center.y
+                    const distSq = (dx * dx) + (dy * dy)
+
+                    if (distSq <= outerRadiusSq) {
+                        insideOuter = true
+                        if (distSq <= innerRadiusSq) {
+                            insideInner = true
+                            break
+                        }
+                    }
+                }
+
+                if (insideOuter && !insideInner) {
+                    revealedCount += this.revealTile(tile)
+                }
+            }
+        }
+
+        return revealedCount
+    }
+
+    revealCave() {
+        const queenBuilding = this.getQueenBuilding()
+        if (!queenBuilding || !Array.isArray(queenBuilding.tileArray) || queenBuilding.tileArray.length === 0) {
+            return 0
+        }
+
+        const queue = []
+        const visited = new Set()
+
+        for (const tile of queenBuilding.tileArray) {
+            if (!tile || typeof tile.key !== 'string' || visited.has(tile.key)) {
+                continue
+            }
+            visited.add(tile.key)
+            queue.push(tile)
+        }
+
+        let queueHead = 0
+        let revealedCount = 0
+
+        while (queueHead < queue.length) {
+            const currentTile = queue[queueHead]
+            queueHead++
+
+            revealedCount += this.revealTile(currentTile)
+
+            if (!currentTile || currentTile.getBase() === 'wall') {
+                continue
+            }
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (!neighbor || visited.has(neighbor.key)) {
+                    continue
+                }
+
+                visited.add(neighbor.key)
+                revealedCount += this.revealTile(neighbor)
+
+                if (neighbor.getBase() !== 'wall') {
+                    queue.push(neighbor)
+                }
+            }
+        }
+
+        return revealedCount
     }
 
     notifyMineableTilesChanged(tileKeys) {

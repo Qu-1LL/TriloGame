@@ -4,12 +4,14 @@ import { Menu } from './menu.js'
 import { Ore } from './ores.js'
 import { Creature } from './creature.js'
 import * as BUILD from './building.js'
+import { Stats } from './stats.js'
 
 export class Game {
 
     constructor(app) {
         this.app = app
         this.currentScale = 1
+        this.eventListeners = new Map()
 
         //event variables
 
@@ -55,11 +57,14 @@ export class Game {
             cochinium: 0
         } 
 
+        this.stats = new Stats(this)
+
         this.unlockedBuildings = [
             new BUILD.Factory(BUILD.AlgaeFarm,this),
             new BUILD.Factory(BUILD.Storage,this),
             new BUILD.Factory(BUILD.Smith,this),
-            new BUILD.Factory(BUILD.MiningPost,this)
+            new BUILD.Factory(BUILD.MiningPost,this),
+            new BUILD.Factory(BUILD.Radar,this)
         ]
 
 
@@ -161,6 +166,229 @@ export class Game {
         }(this.tileContainer,this.uiContainer,this)
     }
 
+    on(eventName, listener) {
+        if (typeof eventName !== 'string' || eventName.length === 0 || typeof listener !== 'function') {
+            return () => {}
+        }
+
+        if (!this.eventListeners.has(eventName)) {
+            this.eventListeners.set(eventName, new Set())
+        }
+
+        this.eventListeners.get(eventName).add(listener)
+        return () => this.off(eventName, listener)
+    }
+
+    off(eventName, listener) {
+        const listeners = this.eventListeners.get(eventName)
+        if (!listeners) {
+            return false
+        }
+
+        const removed = listeners.delete(listener)
+        if (listeners.size === 0) {
+            this.eventListeners.delete(eventName)
+        }
+        return removed
+    }
+
+    emit(eventName, payload = {}) {
+        const listeners = this.eventListeners.get(eventName)
+        if (!listeners || listeners.size === 0) {
+            return 0
+        }
+
+        for (const listener of [...listeners]) {
+            listener(payload)
+        }
+
+        return listeners.size
+    }
+
+    isOreTileType(tileType) {
+        for (const ore of Ore.getOres()) {
+            if (ore.name === tileType) {
+                return true
+            }
+        }
+        return false
+    }
+
+    emitMineEvents(tileType, cave, tileKey, source = null) {
+        const payload = {
+            cave,
+            tileKey,
+            location: toCoords(tileKey),
+            minedType: tileType,
+            resourceType: tileType === 'wall' ? 'Sandstone' : tileType,
+            source
+        }
+
+        this.emit('tileMined', payload)
+
+        if (tileType === 'wall') {
+            this.emit('wallMined', payload)
+            return
+        }
+
+        if (this.isOreTileType(tileType)) {
+            this.emit(`${tileType}Mined`, payload)
+        }
+    }
+
+    mineTile(cave, tileKey, source = null) {
+        const tile = cave?.getTile(tileKey)
+        if (!tile || !tile.sprite) {
+            return false
+        }
+
+        const tileType = tile.getBase()
+        if (tileType === 'wall') {
+            return this.mineWallTile(cave, tile, tileKey, source)
+        }
+
+        if (!this.isOreTileType(tileType)) {
+            return false
+        }
+
+        tile.setBase('empty')
+        tile.sprite.texture = PIXI.Texture.from('empty')
+
+        if (typeof cave.notifyMineableTilesChanged === 'function') {
+            cave.notifyMineableTilesChanged([tileKey])
+        }
+
+        this.emitMineEvents(tileType, cave, tileKey, source)
+        return true
+    }
+
+    mineWallTile(cave, tile, emptyCoords, source = null) {
+        if (!tile || tile.getBase() !== 'wall' || !tile.sprite) {
+            return false
+        }
+
+        const myTile = tile.sprite
+        const changedKeys = new Set([emptyCoords])
+
+        myTile.texture = PIXI.Texture.from('empty')
+        tile.setBase('empty')
+        tile.creatureCanFit = true
+
+        myTile.on("mouseup", () => {
+            this.emptyTileClicked(emptyCoords,cave)
+        })
+        myTile.on("pointerover", (event) => {
+            this.emptyTileHover(emptyCoords,cave,event)
+        })
+        myTile.on("pointerout", () => {
+            this.emptyTileHoverExit()
+        })
+  
+        let myDelts = new Map();
+        myDelts.set('n',{x:0,y:-1})
+        myDelts.set('s',{x:0,y:1})
+        myDelts.set('e',{x:1,y:0})
+        myDelts.set('w',{x:-1,y:0})
+        let myCoords = toCoords(emptyCoords)
+        let shouldRevealCave = false
+        for (let n of cave.getTile(emptyCoords).getNeighbors()) {
+            let nCoords = toCoords(n.key)
+            if (nCoords.x - myCoords.x == 1 ) {
+                myDelts.delete('e')
+            } else if (nCoords.x - myCoords.x == -1) {
+                myDelts.delete('w')
+            } else if (nCoords.y - myCoords.y == -1) {
+                myDelts.delete('n')
+            } else {
+                myDelts.delete('s')
+            }
+
+            if (n.getBase() === 'wall') {
+                if (n.sprite?.visible === false) {
+                    n.sprite.visible = true
+                    changedKeys.add(n.key)
+                }
+                continue
+            }
+
+            if (n.sprite?.visible === false) {
+                shouldRevealCave = true
+            }
+        }
+
+        for (let dir of myDelts.values()) {
+            let newCoords = (myCoords.x + dir.x) + "," + (myCoords.y + dir.y)
+            let wallTile = cave.getTile(newCoords)
+            if (wallTile) {
+                tile.addNeighbor(wallTile)
+                changedKeys.add(newCoords)
+
+                if (wallTile.getBase() === 'wall') {
+                    wallTile.creatureCanFit = false
+                    if (wallTile.sprite?.visible === false) {
+                        wallTile.sprite.visible = true
+                    }
+                    continue
+                }
+
+                if (wallTile.sprite?.visible === false) {
+                    shouldRevealCave = true
+                }
+                continue
+            }
+
+            wallTile = cave.addTile(newCoords)
+            wallTile.setBase('wall')
+            wallTile.creatureCanFit = false
+            changedKeys.add(newCoords)
+
+            let newDelts = new Map();
+            newDelts.set('n',{x:0,y:-1})
+            newDelts.set('s',{x:0,y:1})
+            newDelts.set('e',{x:1,y:0})
+            newDelts.set('w',{x:-1,y:0})
+
+            let wallCoords = toCoords(newCoords)
+            for (let d of newDelts.values()) {
+                let newN = cave.getTile((wallCoords.x + d.x) + "," + (wallCoords.y + d.y))
+                
+                if (newN != undefined) {
+                    wallTile.addNeighbor(newN)
+                }
+            }
+
+            let newTile = PIXI.Sprite.from('wall')
+            wallTile.sprite = newTile
+            newTile.x = myTile.x + (dir.x * 80 * this.currentScale)
+            newTile.y = myTile.y + (dir.y * 80 * this.currentScale)
+            newTile.baseX = myTile.baseX + (dir.x * 80)
+            newTile.baseY = myTile.baseY + (dir.y * 80)
+
+            newTile.anchor.set(0.5)
+            newTile.interactive = true;
+            newTile.buttonMode = true;
+
+            newTile.scale.set(this.currentScale)
+
+            this.tileContainer.addChild(newTile)
+
+            newTile.on("mouseup", (interactionEvent) => {
+                this.whenWallMined(interactionEvent, newTile, cave, newCoords)
+            })
+        }
+
+        if (shouldRevealCave) {
+            cave.revealCave()
+        }
+
+        if (typeof cave.notifyMineableTilesChanged === 'function') {
+            cave.notifyMineableTilesChanged([...changedKeys])
+        }
+
+        this.emitMineEvents('wall', cave, emptyCoords, source)
+        return true
+    }
+
     cleanActive() {
 
         for (let sprite of this.floatingPaths) {
@@ -200,90 +428,7 @@ export class Game {
         if (this.dragging || this.buildMode || cave.getTile(emptyCoords).getBase() != 'wall') {
             return
         }
-
-        const changedKeys = [emptyCoords]
-
-        myTile.texture = PIXI.Texture.from('empty')
-        let newEmpty = cave.getTile(emptyCoords)
-        newEmpty.setBase('empty')
-        newEmpty.creatureCanFit = true
-
-        myTile.on("mouseup", () => {
-            this.emptyTileClicked(emptyCoords,cave)
-        })
-        myTile.on("pointerover", (event) => {
-            this.emptyTileHover(emptyCoords,cave,event)
-        })
-        myTile.on("pointerout", () => {
-            this.emptyTileHoverExit()
-        })
-  
-        let myDelts = new Map();
-        myDelts.set('n',{x:0,y:-1})
-        myDelts.set('s',{x:0,y:1})
-        myDelts.set('e',{x:1,y:0})
-        myDelts.set('w',{x:-1,y:0})
-        let myCoords = toCoords(emptyCoords)
-        for (let n of cave.getTile(emptyCoords).getNeighbors()) {
-            let nCoords = toCoords(n.key)
-            if (nCoords.x - myCoords.x == 1 ) {
-                myDelts.delete('e')
-            } else if (nCoords.x - myCoords.x == -1) {
-                myDelts.delete('w')
-            } else if (nCoords.y - myCoords.y == -1) {
-                myDelts.delete('n')
-            } else {
-                myDelts.delete('s')
-            }
-        }
-
-        //for each empty neighbor
-        //create new wall tile
-        for (let dir of myDelts.values()) {
-            let newCoords = (myCoords.x + dir.x) + "," + (myCoords.y + dir.y)
-            let wallTile = cave.addTile(newCoords)
-            wallTile.setBase('wall')
-            wallTile.creatureCanFit = false
-            changedKeys.push(newCoords)
-
-            let newDelts = new Map();
-            newDelts.set('n',{x:0,y:-1})
-            newDelts.set('s',{x:0,y:1})
-            newDelts.set('e',{x:1,y:0})
-            newDelts.set('w',{x:-1,y:0})
-
-            let wallCoords = toCoords(newCoords)
-            for (let d of newDelts.values()) {
-                let newN = cave.getTile((wallCoords.x + d.x) + "," + (wallCoords.y + d.y))
-                
-                if (newN != undefined) {
-                    wallTile.addNeighbor(newN)
-                }
-            }
-
-            let newTile = PIXI.Sprite.from('wall')
-            wallTile.sprite = newTile
-            newTile.x = interactionEvent.currentTarget.x + (dir.x * 80 * this.currentScale)
-            newTile.y = interactionEvent.currentTarget.y + (dir.y * 80 * this.currentScale)
-            newTile.baseX = interactionEvent.currentTarget.baseX + (dir.x * 80)
-            newTile.baseY = interactionEvent.currentTarget.baseY + (dir.y * 80)
-
-            newTile.anchor.set(0.5)
-            newTile.interactive = true;
-            newTile.buttonMode = true;
-
-            newTile.scale.set(this.currentScale)
-
-            this.tileContainer.addChild(newTile)
-
-            newTile.on("mouseup", (interactionEvent) => {
-                this.whenWallMined(interactionEvent, newTile, cave, newCoords)
-            })
-        }
-
-        if (typeof cave.notifyMineableTilesChanged === 'function') {
-            cave.notifyMineableTilesChanged(changedKeys)
-        }
+        this.mineTile(cave, emptyCoords, 'manual')
     }
 
     emptyTileClicked(coords,myCave) {
