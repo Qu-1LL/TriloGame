@@ -23,12 +23,3 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local agent documentation
-agent.md
-agents.md
-AGENT.md
-AGENTS.md
-**/agent.md
-**/agents.md
-**/AGENT.md
-**/AGENTS.md
