@@ -592,6 +592,41 @@ export class Cave extends Graph {
         }
     }
 
+    removeCreature(creature, source = null) {
+        if (!creature) {
+            return false
+        }
+
+        if (this.game.selected.object === creature) {
+            this.game.cleanActive()
+        }
+
+        creature.clearActionQueue()
+        if (typeof creature.cleanupBeforeRemoval === 'function') {
+            creature.cleanupBeforeRemoval(source)
+        }
+
+        for (const building of this.buildings) {
+            if (typeof building.removeAssignment === 'function') {
+                building.removeAssignment(creature)
+            }
+        }
+
+        this.creatures.delete(creature)
+
+        if (creature.sprite?.parent) {
+            creature.sprite.parent.removeChild(creature.sprite)
+        }
+
+        if (typeof creature.sprite?.destroy === 'function') {
+            creature.sprite.destroy()
+        }
+
+        creature.location = { x: null, y: null }
+        creature.cave = null
+        return true
+    }
+
     spawn(creature,tile) {
         if (!creature || !tile || !tile.sprite) {
             return false
