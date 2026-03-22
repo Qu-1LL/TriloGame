@@ -27,9 +27,76 @@ export class Trilobite extends Creature {
 
     constructor(name, location, game) {
         super(name, location, PIXI.Sprite.from('Trilobite'), game)
+        this.inventory = {
+            type: null,
+            amount: 0
+        }
+        this.inventoryCapacity = 5
         this.miningPost = null
         this.pendingMineTileKey = null
         this.algaeFarm = null
+    }
+
+    getInventory() {
+        return this.inventory
+    }
+
+    hasInventory() {
+        return this.inventory.amount > 0
+    }
+
+    getInventoryCapacity() {
+        return this.inventoryCapacity
+    }
+
+    getInventorySpace() {
+        return Math.max(0, this.inventoryCapacity - this.inventory.amount)
+    }
+
+    addToInventory(resourceType, amount) {
+        if (typeof resourceType !== 'string' || !Number.isFinite(amount) || amount <= 0) {
+            return 0
+        }
+
+        if (!this.hasInventory()) {
+            this.inventory.type = resourceType
+        }
+
+        if (this.inventory.type !== resourceType) {
+            return 0
+        }
+
+        const added = Math.min(this.getInventorySpace(), amount)
+        this.inventory.amount += added
+
+        return added
+    }
+
+    removeFromInventory(amount) {
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return 0
+        }
+
+        const removed = Math.min(this.inventory.amount, amount)
+        this.inventory.amount -= removed
+
+        if (this.inventory.amount === 0) {
+            this.inventory.type = null
+        }
+
+        return removed
+    }
+
+    clearInventory() {
+        this.inventory.type = null
+        this.inventory.amount = 0
+    }
+
+    cleanupBeforeRemoval() {
+        this.clearActionQueue()
+        this.releaseMiningPost()
+        this.releaseAlgaeFarm()
+        this.clearInventory()
     }
 
     getBehavior() {

@@ -7,11 +7,8 @@ export class Creature {
         this.name = name
         this.queue = new NodeQueue()
         this.pathPreview = []
-        this.inventory = {
-            type: null,
-            amount: 0
-        }
-        this.inventoryCapacity = 5
+        this.health = 20
+        this.damage = 5
         this.location = location
         this.sprite = sprite
         this.game = game
@@ -42,59 +39,57 @@ export class Creature {
         this.pathPreview = []
     }
 
-    getInventory() {
-        return this.inventory
+    getDamage() {
+        return this.damage
     }
 
-    hasInventory() {
-        return this.inventory.amount > 0
-    }
-
-    getInventoryCapacity() {
-        return this.inventoryCapacity
-    }
-
-    getInventorySpace() {
-        return Math.max(0, this.inventoryCapacity - this.inventory.amount)
-    }
-
-    addToInventory(resourceType, amount) {
-        if (typeof resourceType !== 'string' || !Number.isFinite(amount) || amount <= 0) {
+    dealDamage(target) {
+        if (!target || target === this || typeof target.takeDamage !== 'function') {
             return 0
         }
 
-        if (!this.hasInventory()) {
-            this.inventory.type = resourceType
-        }
+        return target.takeDamage(this.getDamage(), this)
+    }
 
-        if (this.inventory.type !== resourceType) {
+    takeDamage(amount, source = null) {
+        if (!Number.isFinite(amount) || amount <= 0 || this.health <= 0) {
             return 0
         }
 
-        const added = Math.min(this.getInventorySpace(), amount)
-        this.inventory.amount += added
+        const applied = Math.min(this.health, amount)
+        this.health -= applied
 
-        return added
-    }
-
-    removeFromInventory(amount) {
-        if (!Number.isFinite(amount) || amount <= 0) {
-            return 0
+        if (this.health <= 0) {
+            this.health = 0
+            this.removeFromGame(source)
         }
 
-        const removed = Math.min(this.inventory.amount, amount)
-        this.inventory.amount -= removed
-
-        if (this.inventory.amount === 0) {
-            this.inventory.type = null
-        }
-
-        return removed
+        return applied
     }
 
-    clearInventory() {
-        this.inventory.type = null
-        this.inventory.amount = 0
+    cleanupBeforeRemoval() {
+        return
+    }
+
+    removeFromGame(source = null) {
+        if (this.cave && typeof this.cave.removeCreature === 'function') {
+            return this.cave.removeCreature(this, source)
+        }
+
+        this.clearActionQueue()
+        this.cleanupBeforeRemoval()
+
+        if (this.sprite?.parent) {
+            this.sprite.parent.removeChild(this.sprite)
+        }
+
+        if (typeof this.sprite?.destroy === 'function') {
+            this.sprite.destroy()
+        }
+
+        this.location = { x: null, y: null }
+        this.cave = null
+        return true
     }
 
     enqueueAction(actionFn) {
