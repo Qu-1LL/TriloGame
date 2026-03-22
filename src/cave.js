@@ -290,6 +290,9 @@ export class Cave extends Graph {
     canBuild(building,location) {
         for(let x = 0; x < building.size.x; x++) {
             for (let y = 0; y < building.size.y; y++) {
+                if (building.openMap[y][x] > 1) {
+                    continue
+                }
                 let theseCoords = (location.x + x) + "," + (location.y + y)
                 let curTile = this.tiles.get(theseCoords)
                 if (curTile === undefined) {
@@ -309,6 +312,7 @@ export class Cave extends Graph {
         }
         this.buildings.add(building)
         building.setLocation(location.x,location.y)
+        building.sprite = sprite
 
         for(let x = 0; x < building.size.x; x++) {
             for (let y = 0; y < building.size.y; y++) {
@@ -329,12 +333,19 @@ export class Cave extends Graph {
 
         let tileSprite = this.getTile(location.x+","+location.y).sprite
 
-        sprite.x = tileSprite.x + ((building.size.x - 1) * (40 * this.game.currentScale))
-        sprite.y = tileSprite.y + ((building.size.y - 1) * (40 * this.game.currentScale))
-        sprite.baseX = tileSprite.baseX + ((building.size.x - 1) * 40)
-        sprite.baseY = tileSprite.baseY + ((building.size.y - 1) * 40)
+        if (sprite.anchor) {
+            sprite.x = tileSprite.x + ((building.size.x - 1) * (40 * this.game.currentScale))
+            sprite.y = tileSprite.y + ((building.size.y - 1) * (40 * this.game.currentScale))
+            sprite.baseX = tileSprite.baseX + ((building.size.x - 1) * 40)
+            sprite.baseY = tileSprite.baseY + ((building.size.y - 1) * 40)
+            sprite.anchor.set(0.5)
+        } else {
+            sprite.x = tileSprite.x
+            sprite.y = tileSprite.y
+            sprite.baseX = tileSprite.baseX
+            sprite.baseY = tileSprite.baseY
+        }
         this.game.tileContainer.addChild(sprite)
-        sprite.anchor.set(0.5)
         sprite.scale.set(this.game.currentScale)
         sprite.interactive = true;
         sprite.buttonMode = true;
@@ -590,6 +601,46 @@ export class Cave extends Graph {
                 building.invalidateMineableQueuesForKeys(tileKeys)
             }
         }
+    }
+
+    removeBuilding(building) {
+        if (!this.buildings.has(building)) {
+            return false
+        }
+
+        if (this.game.selected.object === building) {
+            this.game.cleanActive()
+        }
+
+        for (let x = 0; x < building.size.x; x++) {
+            for (let y = 0; y < building.size.y; y++) {
+                if (building.openMap[y][x] > 1) {
+                    continue
+                }
+
+                let theseCoords = (building.location.x + x) + "," + (building.location.y + y)
+                let curTile = this.tiles.get(theseCoords)
+                if (!curTile || curTile.getBuilt() !== building) {
+                    continue
+                }
+
+                curTile.setBuilt(null)
+                curTile.creatureCanFit = true
+            }
+        }
+
+        building.tileArray = []
+        building.setLocation(null, null)
+        this.buildings.delete(building)
+
+        if (building.sprite && building.sprite.parent) {
+            building.sprite.parent.removeChild(building.sprite)
+        }
+        if (building.sprite) {
+            building.sprite.destroy()
+        }
+
+        return true
     }
 
     spawn(creature,tile) {

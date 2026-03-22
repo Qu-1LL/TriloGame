@@ -310,6 +310,10 @@ async function preload()
                 game.floatingBuilding.sprite.rotation += Math.PI / 2
                 game.floatingBuilding.building.rotateMap()
 
+                if (!game.floatingBuilding.sprite.anchor) {
+                    return
+                }
+
                 if (game.floatingBuilding.rotation == 0) {
                     game.floatingBuilding.rotation++
                     game.floatingBuilding.sprite.anchor.set(1 / (game.floatingBuilding.building.size.x * 2), ((game.floatingBuilding.building.size.y * 2) - 1) / (game.floatingBuilding.building.size.y * 2))
@@ -329,4 +333,3 @@ async function preload()
 
 
 })();
-

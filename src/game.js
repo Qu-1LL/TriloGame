@@ -404,7 +404,9 @@ export class Game {
         this.movePath = false
         this.buildMode = false
         this.floatingBuilding.building = null
-        this.tileContainer.removeChild(this.floatingBuilding.sprite)
+        if (this.floatingBuilding.sprite && this.floatingBuilding.sprite.parent) {
+            this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
+        }
         this.floatingBuilding.sprite = null
         this.floatingBuilding.rotation = 0
 

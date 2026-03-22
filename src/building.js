@@ -548,6 +548,26 @@ export class MiningPost extends Building {
 
 }
 
+
+
+export class Scaffolding extends Building{
+    constructor(type,cave,location,name,size,openMap,game,station, ...args){
+        super(name,size,openMap,game,station)
+        this.type = type
+        this.cave = cave
+        this.location = location
+        this.sprite = PIXI.Sprite.from('Scaffolding')
+        this.building = new type(game, ...args)
+    }
+    
+    
+
+    finishBuilding(){
+        this.cave.removeBuilding(this)
+        this.cave.build(this.building, this.location, this.building.sprite)
+    }
+}
+
 export class Queen extends Building {
 
     constructor(game) {

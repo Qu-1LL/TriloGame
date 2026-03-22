@@ -233,7 +233,7 @@ export class Menu {
                     return
                 }
 
-                let mySprite = PIXI.Sprite.from(building.sprite.texture)
+                let mySprite = PIXI.Sprite.from(building.previewTexture)
                 mySprite.x = this.bounds.minX + ((this.bounds.maxX - this.bounds.minX) / 2) + (10 * this.scale)
                 mySprite.y = this.bounds.minY + title.height + (10 * this.scale)
                 mySprite.zIndex = 1
@@ -290,7 +290,9 @@ export class Menu {
                 this.game.floatingBuilding.sprite.baseX = pos.x - rect.left
                 this.game.floatingBuilding.sprite.baseY = pos.y - rect.top
                 this.game.floatingBuilding.sprite.scale.set(this.game.currentScale)
-                this.game.floatingBuilding.sprite.anchor.set((1 / (this.game.floatingBuilding.building.size.x * 2)),  (1 / (this.game.floatingBuilding.building.size.y * 2)))
+                if (this.game.floatingBuilding.sprite.anchor) {
+                    this.game.floatingBuilding.sprite.anchor.set((1 / (this.game.floatingBuilding.building.size.x * 2)),  (1 / (this.game.floatingBuilding.building.size.y * 2)))
+                }
                 this.game.floatingBuilding.rotation = 0
             })
 
