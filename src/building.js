@@ -69,7 +69,8 @@ export class Factory {
 
 export class Building {
 
-    constructor (name,size,openMap,game,station) {
+    constructor (recipe,name,size,openMap,game,station) {
+        this.recipe = recipe
         this.name = name
         this.size = size
         this.openMap = openMap
@@ -123,9 +124,48 @@ export class Building {
 
 }
 
+export class Scaffolding extends Building{
+    constructor(type,cave,name,size,openMap,game,station, ...args){
+        super(name,size,openMap,game,station)
+        this.type = type
+        this.cave = cave
+        this.sprite = PIXI.Sprite.from('Scaffolding')
+        this.building = new type(game, ...args)
+        this.requirements = this.building.recipe
+        this.inventory = {}
+    }
+    
+    
+    addItem(item){
+        if (this.inventory.has(item)){
+            this.inventory.set(item, this.inventory.get(item)+1)
+        } else {
+            this.inventory.set(item, 1)
+        }
+
+        doneFlag = true
+        for (const [key, val] of this.requirements){
+            if (!this.inventory.has(key) || this.inventory.get(key) < val){
+                doneFlag = false
+                break
+            }
+        }
+
+        if (doneFlag){
+            this.finishBuilding()
+        }
+    }
+
+    finishBuilding(){
+        this.cave.removeBuilding(this)
+        this.cave.build(this.building, this.building.location, this.building.sprite)
+    }
+}
+
+
 export class MiningPost extends Building {
     constructor(game){
-        super('Mining Post', {x:3, y:3}, [[1,1,1],[1,0,1],[1,1,1]],game,true)
+        super({"Sandstone":10},'Mining Post', {x:3, y:3}, [[1,1,1],[1,0,1],[1,1,1]],game,true)
         this.sprite = PIXI.Sprite.from('Mining Post')
         this.description = `Units assigned to this post will mine ore and stone in a ${this.getRadius()}-block radius and store it here. Has a capacity of ${this.getCapacity()}.`
 
@@ -550,30 +590,11 @@ export class MiningPost extends Building {
 
 
 
-export class Scaffolding extends Building{
-    constructor(type,cave,location,name,size,openMap,game,station, ...args){
-        super(name,size,openMap,game,station)
-        this.type = type
-        this.cave = cave
-        this.location = location
-        this.sprite = PIXI.Sprite.from('Scaffolding')
-        this.building = new type(game, ...args)
-    }
-    
-    
-
-    finishBuilding(){
-        this.cave.removeBuilding(this)
-        this.cave.build(this.building, this.location, this.building.sprite)
-    }
-}
-
 export class Queen extends Building {
 
     constructor(game) {
-        super('Queen',{x:3, y:3},[[1,1,1],[1,0,1],[1,1,1]],game,true)
+        super({},'Queen',{x:3, y:3},[[1,1,1],[1,0,1],[1,1,1]],game,true)
         this.sprite = PIXI.Sprite.from('Queen')
-
         this.algaeQuota = 20
         this.algaeCount = 0
         this.broodlingCount = 1
@@ -673,7 +694,7 @@ export class Queen extends Building {
 export class AlgaeFarm extends Building {
 
     constructor(game) {
-        super('Algae Farm',{x:2,y:3},[[1,1],[1,1],[1,1]],game,false)
+        super({"Sandstone":10},'Algae Farm',{x:2,y:3},[[1,1],[1,1],[1,1]],game,false)
         this.sprite = PIXI.Sprite.from('Algae Farm')
 
         this.period = 30
@@ -894,7 +915,7 @@ export class AlgaeFarm extends Building {
 export class Radar extends Building {
 
     constructor(game) {
-        super('Radar', {x:4, y:4}, [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], game, false)
+        super({"Sandstone":10},'Radar', {x:4, y:4}, [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], game, false)
         this.sprite = PIXI.Sprite.from('Radar')
 
         this.radiusMax = 50
@@ -959,7 +980,7 @@ export class Radar extends Building {
 export class Storage extends Building {
 
     constructor (game) {
-        super("Storage",{x:2,y:2},[[0,0],[0,0]],game,false)
+        super({"Sandstone":10},"Storage",{x:2,y:2},[[0,0],[0,0]],game,false)
         this.sprite = PIXI.Sprite.from('Storage')
 
         this.capacity = 20
@@ -975,7 +996,7 @@ export class Storage extends Building {
 export class Smith extends Building {
 
     constructor (game) {
-        super("Smith",{x:2,y:2},[[0,0],[0,1]],game,true)
+        super({"Sandstone":10},"Smith",{x:2,y:2},[[0,0],[0,1]],game,true)
         this.sprite = PIXI.Sprite.from('Smith')
 
         this.description = `A building that allows you to craft new items for your species.`
