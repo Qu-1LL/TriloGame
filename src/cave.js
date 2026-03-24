@@ -39,6 +39,14 @@ export function toKey(location) {
     }
 }
 
+function isTrackedTrilobite(creature) {
+    return creature?.constructor?.name === 'Trilobite'
+}
+
+function isEnemyCreature(creature) {
+    return creature?.assignment === 'enemy' || creature?.constructor?.name === 'Enemy'
+}
+
 
 export class Cave extends Graph {
 
@@ -592,10 +600,53 @@ export class Cave extends Graph {
         }
     }
 
+    hasEnemies() {
+        for (const creature of this.creatures) {
+            if (isEnemyCreature(creature)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    restoreAllCreatureHealth() {
+        let restoredCount = 0
+
+        for (const creature of this.creatures) {
+            if (!creature || typeof creature.restoreHealth !== 'function') {
+                continue
+            }
+
+            creature.restoreHealth()
+            restoredCount++
+        }
+
+        return restoredCount
+    }
+
+    syncTrilobiteTileOccupancy(creature, fromTile = null, toTile = null) {
+        if (!isTrackedTrilobite(creature)) {
+            return false
+        }
+
+        if (fromTile && typeof fromTile.removeTrilobite === 'function') {
+            fromTile.removeTrilobite(creature)
+        }
+
+        if (toTile && typeof toTile.addTrilobite === 'function') {
+            toTile.addTrilobite(creature)
+        }
+
+        return true
+    }
+
     removeCreature(creature, source = null) {
         if (!creature) {
             return false
         }
+
+        const removedEnemy = isEnemyCreature(creature)
 
         if (this.game.selected.object === creature) {
             this.game.cleanActive()
@@ -612,7 +663,15 @@ export class Cave extends Graph {
             }
         }
 
+        const currentTile = this.getTile(toKey(creature.location))
+        this.syncTrilobiteTileOccupancy(creature, currentTile, null)
+
         this.creatures.delete(creature)
+
+        if (removedEnemy && !this.hasEnemies()) {
+            this.game.danger = false
+            this.restoreAllCreatureHealth()
+        }
 
         if (creature.sprite?.parent) {
             creature.sprite.parent.removeChild(creature.sprite)
@@ -636,8 +695,10 @@ export class Cave extends Graph {
             return false
         }
 
+        const previousTile = this.getTile(toKey(creature.location))
         const spawnLocation = toCoords(tile.key)
         creature.location = { x: spawnLocation.x, y: spawnLocation.y }
+        this.syncTrilobiteTileOccupancy(creature, previousTile, tile)
 
         const tileSprite = tile.sprite
         creature.sprite.anchor.set(0.5)
@@ -654,6 +715,10 @@ export class Cave extends Graph {
         this.game.tileContainer.addChild(creature.sprite)
 
         this.creatures.add(creature)
+
+        if (isEnemyCreature(creature) && this.game.danger === false) {
+            this.game.danger = true
+        }
 
         return true
     }
@@ -674,6 +739,8 @@ export class Cave extends Graph {
         if (nextTile === undefined || !nextTile.creatureFits()) {
             return false
         }
+
+        const currentTile = this.getTile(toKey(current))
 
         const moveDist = Math.abs(current.x - next.x) + Math.abs(current.y - next.y)
         if (moveDist !== 1) {
@@ -704,6 +771,7 @@ export class Cave extends Graph {
         }
 
         creature.location = { x: next.x, y: next.y }
+        this.syncTrilobiteTileOccupancy(creature, currentTile, nextTile)
         return creature.location
     }
 

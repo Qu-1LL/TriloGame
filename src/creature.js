@@ -8,6 +8,7 @@ export class Creature {
         this.queue = new NodeQueue()
         this.pathPreview = []
         this.health = 20
+        this.maxHealth = this.health
         this.damage = 5
         this.location = location
         this.sprite = sprite
@@ -41,6 +42,15 @@ export class Creature {
 
     getDamage() {
         return this.damage
+    }
+
+    getMaxHealth() {
+        return this.maxHealth
+    }
+
+    restoreHealth() {
+        this.health = this.getMaxHealth()
+        return this.health
     }
 
     dealDamage(target) {
@@ -106,6 +116,12 @@ export class Creature {
         }
         if (this.assignment === "farmer" && typeof this.farmerStep1 === 'function') {
             return () => this.farmerStep1()
+        }
+        if (this.assignment === "fighter" && typeof this.fighterStep1 === 'function') {
+            return () => this.fighterStep1()
+        }
+        if (this.assignment === "enemy" && typeof this.enemyStep1 === 'function') {
+            return () => this.enemyStep1()
         }
         return null
     }

@@ -182,6 +182,25 @@ export class Menu {
             this.game.cleanActive()
         })
 
+        let fighterButton = PIXI.Sprite.from('window_4x1')
+        fighterButton.x = this.bounds.minX + (10 * this.scale)
+        fighterButton.y = farmButton.y + farmButton.height + (10 * this.scale)
+        this.addMenuItem(fighterButton,1,0.6,true)
+        let fighterText = new PIXI.Text({text: 'Fight',style: style })
+        fighterText.x = fighterButton.position.x + (15 * this.scale)
+        fighterText.y = fighterButton.position.y + (7 * this.scale)
+        this.addMenuItem(fighterText,2,1,false)
+
+        fighterButton.on('mouseup', () => {
+            this.object.assignment = "fighter"
+            this.object.clearActionQueue()
+            const behavior = this.object.getBehavior()
+            if (typeof behavior === 'function') {
+                behavior.call(this.object)
+            }
+            this.game.cleanActive()
+        })
+
         let otherChoices = this.object.getActions()
 
     }

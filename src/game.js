@@ -3,7 +3,13 @@ import { toCoords } from './cave.js'
 import { Menu } from './menu.js'
 import { Ore } from './ores.js'
 import { Creature } from './creature.js'
-import * as BUILD from './building.js'
+import { Building, Factory } from './building.js'
+import { AlgaeFarm } from './buildings/algae-farm.js'
+import { Barracks } from './buildings/barracks.js'
+import { MiningPost } from './buildings/mining-post.js'
+import { Radar } from './buildings/radar.js'
+import { Smith } from './buildings/smith.js'
+import { Storage } from './buildings/storage.js'
 import { Stats } from './stats.js'
 
 export class Game {
@@ -22,6 +28,7 @@ export class Game {
 
         this.totalXDelt = 0
         this.totalYDelt = 0
+        this.danger = false
         
         //setting up stage
         //UI variables
@@ -60,11 +67,12 @@ export class Game {
         this.stats = new Stats(this)
 
         this.unlockedBuildings = [
-            new BUILD.Factory(BUILD.AlgaeFarm,this),
-            new BUILD.Factory(BUILD.Storage,this),
-            new BUILD.Factory(BUILD.Smith,this),
-            new BUILD.Factory(BUILD.MiningPost,this),
-            new BUILD.Factory(BUILD.Radar,this)
+            new Factory(AlgaeFarm,this),
+            new Factory(Barracks,this),
+            new Factory(Storage,this),
+            new Factory(Smith,this),
+            new Factory(MiningPost,this),
+            new Factory(Radar,this)
         ]
 
 
@@ -113,7 +121,7 @@ export class Game {
                         if (myPath.length > 1) {
                             this.game.displayPath(myPath,this.selectedPaths)
                         }
-                    } else if (this.object instanceof BUILD.Building) {
+                    } else if (this.object instanceof Building) {
                         for (let tile of this.object.tileArray) {
                             for (let n of tile.getNeighbors()) {
                                 if (!this.object.tileArray.includes(n)) {
@@ -164,6 +172,56 @@ export class Game {
                 }
             }
         }(this.tileContainer,this.uiContainer,this)
+    }
+
+    syncWorldSpriteTransforms(extraScreenDx = 0, extraScreenDy = 0, { skipFloatingBuildingOffset = false } = {}) {
+        const dx = Number.isFinite(extraScreenDx) ? extraScreenDx : 0
+        const dy = Number.isFinite(extraScreenDy) ? extraScreenDy : 0
+
+        for (const child of this.tileContainer.children) {
+            child.scale.set(this.currentScale)
+
+            if (!Number.isFinite(child.baseX) || !Number.isFinite(child.baseY)) {
+                continue
+            }
+
+            if (skipFloatingBuildingOffset && child === this.floatingBuilding.sprite) {
+                continue
+            }
+
+            child.x = this.midx + ((child.baseX - this.midx) * this.currentScale) + dx
+            child.y = this.midy + ((child.baseY - this.midy) * this.currentScale) + dy
+        }
+    }
+
+    previewWorldPan(screenDx, screenDy) {
+        this.syncWorldSpriteTransforms(screenDx, screenDy, { skipFloatingBuildingOffset: true })
+    }
+
+    panWorldByScreenDelta(screenDx, screenDy, { skipFloatingBuildingOffset = false } = {}) {
+        const dx = Number.isFinite(screenDx) ? screenDx : 0
+        const dy = Number.isFinite(screenDy) ? screenDy : 0
+
+        if (dx === 0 && dy === 0) {
+            return
+        }
+
+        const baseDx = dx * (1 / this.currentScale)
+        const baseDy = dy * (1 / this.currentScale)
+
+        this.totalXDelt -= baseDx
+        this.totalYDelt -= baseDy
+
+        for (const child of this.tileContainer.children) {
+            if (!Number.isFinite(child.baseX) || !Number.isFinite(child.baseY)) {
+                continue
+            }
+
+            child.baseX += baseDx
+            child.baseY += baseDy
+        }
+
+        this.syncWorldSpriteTransforms(0, 0, { skipFloatingBuildingOffset })
     }
 
     on(eventName, listener) {

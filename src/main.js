@@ -1,9 +1,11 @@
 
 import * as PIXI from 'pixi.js'
 import { Cave, toCoords } from './cave.js'
-import * as BUILD from './building.js' 
+import { MiningPost } from './buildings/mining-post.js'
+import { Queen } from './buildings/queen.js'
 import { Creature } from './creature.js'
-import { Trilobite } from './trilobite.js'
+import { Enemy } from './creatures/enemy.js'
+import { Trilobite } from './creatures/trilobite.js'
 import { Game } from './game.js'
 
 const app = new PIXI.Application();
@@ -22,12 +24,13 @@ function logTickState(cave, tickCount) {
     for (const creature of cave.creatures) {
         const inv = typeof creature.getInventory === 'function' ? creature.getInventory() : null
         const invText = formatInventory(inv)
-        console.log(`Trilobite ${creature.name}: inv=${invText}, loc=${creature.location.x},${creature.location.y}`)
+        const creatureType = creature.constructor?.name ?? 'Creature'
+        console.log(`${creatureType} ${creature.name}: inv=${invText}, loc=${creature.location.x},${creature.location.y}`)
     }
 
     let postIndex = 1
     for (const building of cave.buildings) {
-        if (!(building instanceof BUILD.MiningPost)) {
+        if (!(building instanceof MiningPost)) {
             continue
         }
         const postInv = JSON.stringify(building.getInventory())
@@ -56,6 +59,26 @@ function logStatsSnapshot(game, tickCount) {
     console.log(formatStatsSnapshot(game.stats.getAll()))
 }
 
+function getRandomRevealedSpawnTile(cave) {
+    const occupiedTileKeys = new Set()
+    for (const creature of cave.creatures) {
+        if (Number.isFinite(creature?.location?.x) && Number.isFinite(creature?.location?.y)) {
+            occupiedTileKeys.add(`${creature.location.x},${creature.location.y}`)
+        }
+    }
+
+    const revealedTiles = cave.getTiles().filter((tile) => {
+        return tile?.sprite?.visible === true && tile.creatureFits() && !occupiedTileKeys.has(tile.key)
+    })
+
+    if (revealedTiles.length === 0) {
+        return null
+    }
+
+    const randomIndex = Math.floor(Math.random() * revealedTiles.length)
+    return revealedTiles[randomIndex]
+}
+
 async function setup()
 {
     // Intialize the application.
@@ -81,6 +104,7 @@ async function preload()
         { alias: 'Ilmenite', src: `${base}assets/IlmeniteTile.png` },
         { alias: 'Cochinium', src: `${base}assets/CochiniumTile.png` },
         { alias: 'Trilobite', src: `${base}assets/Trilobite.png` },
+        { alias: 'Enemy', src: `${base}assets/Enemy.png` },
 
         { alias: 'Scaffold', src: `${base}assets/Scaffold.png` },
         { alias: 'Queen', src: `${base}assets/Queen.png` },
@@ -89,7 +113,8 @@ async function preload()
         { alias: 'Smith', src: `${base}assets/Smith.png` },
         { alias: 'Mining Post', src: `${base}assets/MiningPost.png`},
         { alias: 'Radar', src: `${base}assets/Radar.png` },
-
+        { alias: 'Barracks', src: `${base}assets/Barracks.png` },
+        
         { alias: 'path', src: `${base}assets/Path.png` },
         { alias: 'orepath', src: `${base}assets/OrePath.png` },
         { alias: 'selected', src: `${base}assets/Selected.png` },
@@ -113,11 +138,39 @@ async function preload()
     await preload();
 
     const game = new Game(app)
+    const heldPanKeys = new Set()
+    const keyboardPanSpeedPx = 800
+    const panKeyMap = new Map([
+        ['KeyW', { x: 0, y: 1 }],
+        ['KeyA', { x: 1, y: 0 }],
+        ['KeyS', { x: 0, y: -1 }],
+        ['KeyD', { x: -1, y: 0 }]
+    ])
 
     //setting up game state
 
     const cave = new Cave(app,game);
     let tickCount = 0
+    let debugEnemyCount = 1
+
+    const spawnDebugEnemy = () => {
+        const spawnTile = getRandomRevealedSpawnTile(cave)
+        if (!spawnTile) {
+            console.log('No revealed passable tile is available for debug enemy spawn.')
+            return false
+        }
+
+        const spawnLocation = toCoords(spawnTile.key)
+        const enemy = new Enemy(`Debug Enemy ${debugEnemyCount}`, spawnLocation, game, PIXI.Sprite.from('Enemy'))
+        if (!cave.spawn(enemy, spawnTile)) {
+            console.log(`Failed to spawn debug enemy at ${spawnTile.key}.`)
+            return false
+        }
+
+        debugEnemyCount++
+        console.log(`Spawned ${enemy.name} at ${spawnTile.key}.`)
+        return true
+    }
 
     const runTick = () => {
         // game.cleanActive()
@@ -151,7 +204,7 @@ async function preload()
     }
     tickLoop()
     
-    var queen = new BUILD.Queen()
+    var queen = new Queen()
     var spawnX = Math.floor((Math.random() * 20) - 10)
     var spawnY = Math.floor((Math.random() * 20) - 10)
 
@@ -184,6 +237,28 @@ async function preload()
         child.y = child.position.y - game.totalYDelt
     }
 
+    app.ticker.add((ticker) => {
+        if (heldPanKeys.size === 0 || game.dragStartPos !== null) {
+            return
+        }
+
+        const distance = keyboardPanSpeedPx * (ticker.deltaMS / 1000)
+        let dx = 0
+        let dy = 0
+
+        for (const keyCode of heldPanKeys) {
+            const direction = panKeyMap.get(keyCode)
+            if (!direction) {
+                continue
+            }
+
+            dx += direction.x * distance
+            dy += direction.y * distance
+        }
+
+        game.panWorldByScreenDelta(dx, dy)
+    })
+
     //event listeners relative to full game
 
     window.addEventListener("wheel", (event) => {
@@ -203,14 +278,7 @@ async function preload()
                 return
             }
         }
-        for (let child of game.tileContainer.children) {
-            child.scale.set(game.currentScale);
-            if (child === game.floatingBuilding.sprite) {
-                continue
-            }
-            child.x = game.midx + ((child.baseX - game.midx) * game.currentScale)
-            child.y = game.midy + ((child.baseY - game.midy) * game.currentScale)
-        }
+        game.syncWorldSpriteTransforms(0, 0, { skipFloatingBuildingOffset: true })
     })
 
     window.addEventListener('mousedown', (e) => {
@@ -238,13 +306,7 @@ async function preload()
 
             if (dist > 10) {
                 game.dragging = true;
-                for (let child of game.tileContainer.children) {
-                    if (child === game.floatingBuilding.sprite) {
-                        continue
-                    }
-                    child.x = game.midx + ((child.baseX - game.midx) * game.currentScale) + dx
-                    child.y = game.midy + ((child.baseY - game.midy) * game.currentScale) + dy
-                }
+                game.previewWorldPan(dx, dy)
             }
 
         }
@@ -265,16 +327,10 @@ async function preload()
         };
 
         if (game.dragging) {
-            let dx = (pos.x - game.dragStartPos.x) * (1 / game.currentScale);
-            let dy = (pos.y - game.dragStartPos.y) * (1 / game.currentScale);
+            let dx = pos.x - game.dragStartPos.x;
+            let dy = pos.y - game.dragStartPos.y;
 
-            game.totalXDelt -= dx
-            game.totalYDelt -= dy
-            
-            for (let child of game.tileContainer.children) {
-                child.baseX = child.baseX + dx
-                child.baseY = child.baseY + dy
-            }
+            game.panWorldByScreenDelta(dx, dy, { skipFloatingBuildingOffset: true })
         } else {
            //other functionality
         }
@@ -283,6 +339,12 @@ async function preload()
     });
 
     window.addEventListener('keydown', (e) => {
+        if (panKeyMap.has(e.code)) {
+            heldPanKeys.add(e.code)
+            e.preventDefault()
+            return
+        }
+
         if (e.key ==='Enter') {
             // console.log('Enter pressed')
             runTick()
@@ -302,6 +364,7 @@ async function preload()
         } else if (e.key === '4') {
             tickSpeedMs = 50
         } else if (e.key === 'p' || e.key === 'P') {
+            spawnDebugEnemy()
             logTickState(cave, tickCount)
         } else if (e.key ==='Escape') {
             game.cleanActive()
@@ -325,6 +388,16 @@ async function preload()
                 }
             }
         }
+    })
+
+    window.addEventListener('keyup', (e) => {
+        if (panKeyMap.has(e.code)) {
+            heldPanKeys.delete(e.code)
+        }
+    })
+
+    window.addEventListener('blur', () => {
+        heldPanKeys.clear()
     })
 
 
