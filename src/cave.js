@@ -471,7 +471,7 @@ export class Cave extends Graph {
         return [...this.revealedTiles]
     }
 
-    revealTile(tile) {
+    revealTile(tile, revealedKeys = null) {
         if (!tile?.sprite) {
             return 0
         }
@@ -483,6 +483,10 @@ export class Cave extends Graph {
         if (wasRevealed) {
             return 0
         }
+
+        if (revealedKeys instanceof Set) {
+            revealedKeys.add(tile.key)
+        }
         return 1
     }
 
@@ -491,9 +495,14 @@ export class Cave extends Graph {
             return 0
         }
 
+        const revealedKeys = new Set()
         let revealedCount = 0
         for (const tile of tiles) {
-            revealedCount += this.revealTile(tile)
+            revealedCount += this.revealTile(tile, revealedKeys)
+        }
+
+        if (revealedKeys.size > 0) {
+            this.rebalanceAllBfsFields([...revealedKeys])
         }
 
         return revealedCount
@@ -505,6 +514,7 @@ export class Cave extends Graph {
         }
 
         const radiusSq = radius * radius
+        const revealedKeys = new Set()
         let revealedCount = 0
 
         for (const tile of this.getTiles()) {
@@ -520,9 +530,13 @@ export class Cave extends Graph {
                     continue
                 }
 
-                revealedCount += this.revealTile(tile)
+                revealedCount += this.revealTile(tile, revealedKeys)
                 break
             }
+        }
+
+        if (revealedKeys.size > 0) {
+            this.rebalanceAllBfsFields([...revealedKeys])
         }
 
         return revealedCount
@@ -570,6 +584,7 @@ export class Cave extends Graph {
 
         const innerRadiusSq = minRadius * minRadius
         const outerRadiusSq = outerRadius * outerRadius
+        const revealedKeys = new Set()
         let revealedCount = 0
 
         for (let x = Math.floor(minX - outerRadius); x <= Math.ceil(maxX + outerRadius); x++) {
@@ -597,9 +612,13 @@ export class Cave extends Graph {
                 }
 
                 if (insideOuter && !insideInner) {
-                    revealedCount += this.revealTile(tile)
+                    revealedCount += this.revealTile(tile, revealedKeys)
                 }
             }
+        }
+
+        if (revealedKeys.size > 0) {
+            this.rebalanceAllBfsFields([...revealedKeys])
         }
 
         return revealedCount
@@ -623,13 +642,14 @@ export class Cave extends Graph {
         }
 
         let queueHead = 0
+        const revealedKeys = new Set()
         let revealedCount = 0
 
         while (queueHead < queue.length) {
             const currentTile = queue[queueHead]
             queueHead++
 
-            revealedCount += this.revealTile(currentTile)
+            revealedCount += this.revealTile(currentTile, revealedKeys)
 
             if (!currentTile || currentTile.getBase() === 'wall') {
                 continue
@@ -641,12 +661,16 @@ export class Cave extends Graph {
                 }
 
                 visited.add(neighbor.key)
-                revealedCount += this.revealTile(neighbor)
+                revealedCount += this.revealTile(neighbor, revealedKeys)
 
                 if (neighbor.getBase() !== 'wall') {
                     queue.push(neighbor)
                 }
             }
+        }
+
+        if (revealedKeys.size > 0) {
+            this.rebalanceAllBfsFields([...revealedKeys])
         }
 
         return revealedCount
@@ -745,13 +769,18 @@ export class Cave extends Graph {
         }
     }
 
-    addBuildingFieldTargets(building, blockedKeys, seedKeys) {
+    addBuildingFieldTargets(building, blockedKeys, seedKeys, { blockPassableTiles = false } = {}) {
         if (!building || !Array.isArray(building.tileArray) || building.tileArray.length === 0) {
             return
         }
 
         for (const tile of building.tileArray) {
-            if (!tile || tile.creatureFits()) {
+            if (!tile) {
+                continue
+            }
+
+            const shouldBlockTile = blockPassableTiles || !tile.creatureFits()
+            if (!shouldBlockTile) {
                 continue
             }
 
@@ -802,7 +831,10 @@ export class Cave extends Graph {
             }
 
             for (const building of this.buildings) {
-                this.addBuildingFieldTargets(building, blockedKeys, seedKeys)
+                const isAlgaeFarm = building?.name === 'Algae Farm' || building?.constructor?.name === 'AlgaeFarm'
+                this.addBuildingFieldTargets(building, blockedKeys, seedKeys, {
+                    blockPassableTiles: isAlgaeFarm
+                })
             }
         } else if (fieldName === 'queen') {
             this.addBuildingFieldTargets(this.getQueenBuilding(), blockedKeys, seedKeys)

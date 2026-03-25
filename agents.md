@@ -88,7 +88,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - Workflow (`Enemy` step chain):
 1. If the stored hostile tile is adjacent, attack the trilobite or building on that tile.
 2. Otherwise, check neighboring tiles for a trilobite first, then for a building; if found, store that tile as the target and attack.
-3. Otherwise, read the current `colony` BFS field, which is seeded from trilobites plus adjacent tiles around non-passable colony-building tiles, and move one tile to a neighboring passable tile with a lower value.
+3. Otherwise, read the current `colony` BFS field, which is seeded from trilobites plus adjacent tiles around non-passable colony-building tiles and the outside perimeter of algae farms, and move one tile to a neighboring passable tile with a lower value.
 4. Enemy movement re-checks target validity and adjacent trilobites/buildings before and after moving so travel can still be interrupted for combat.
 5. If no lower-value colony tile is reachable, do nothing.
 - Failure handling:
@@ -266,12 +266,10 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - cave generation,
 - tile/building/creature runtime state,
 - `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
-- `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
-- `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
 - pathfinding (`bfsPath`),
 - game-held BFS distance fields for `enemy`, `colony`, and `queen`, computed only over revealed tiles,
 - full rebuilds of the `enemy` and `colony` fields during combat-phase handoff,
-- incremental BFS-field rebalancing when buildings are placed, walls are mined, or creatures spawn,
+- incremental BFS-field rebalancing when buildings are placed, walls are mined, creatures spawn, or new tiles are revealed,
 - creature deaths rely on the next combat-phase BFS rebuild instead of triggering an immediate rebalance,
 - movement, spawn, and removal rules,
 - danger-state syncing for enemy spawn/death, including clearing `game.danger` when the last enemy is removed,
@@ -295,7 +293,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `pendingMineTileKey` for reserved mining targets.
 - `fighterTargetTileKey` for the current enemy tile target.
 - `Enemy extends Creature`:
-- autonomous combat workflow that attacks adjacent trilobites or buildings and otherwise follows the shared colony BFS field toward trilobites or non-passable colony-building targets,
+- autonomous combat workflow that attacks adjacent trilobites or buildings and otherwise follows the shared colony BFS field toward trilobites, non-passable colony-building targets, and the outside perimeter of algae farms,
 - `enemyTargetTileKey` for the current hostile tile target.
 
 ### Building layer
