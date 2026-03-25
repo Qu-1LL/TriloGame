@@ -6,6 +6,7 @@ export class Tile {
         this.holding = new Map();
         this.holding.set('base', 'empty')
         this.holding.set('built',null)
+        this.trilobites = []
         this.creatureCanFit = true
         this.adjacent = new Set();
         this.sprite = null
@@ -42,6 +43,29 @@ export class Tile {
 
     getBuilt() {
         return this.holding.get('built')
+    }
+
+    getTrilobites() {
+        return [...this.trilobites]
+    }
+
+    addTrilobite(trilobite) {
+        if (!trilobite || this.trilobites.includes(trilobite)) {
+            return false
+        }
+
+        this.trilobites.push(trilobite)
+        return true
+    }
+
+    removeTrilobite(trilobite) {
+        const index = this.trilobites.indexOf(trilobite)
+        if (index < 0) {
+            return false
+        }
+
+        this.trilobites.splice(index, 1)
+        return true
     }
 
     canBuild() {

@@ -3,7 +3,13 @@ import { toCoords } from './cave.js'
 import { Menu } from './menu.js'
 import { Ore } from './ores.js'
 import { Creature } from './creature.js'
-import * as BUILD from './building.js'
+import { Building, Factory } from './building.js'
+import { AlgaeFarm } from './buildings/algae-farm.js'
+import { Barracks } from './buildings/barracks.js'
+import { MiningPost } from './buildings/mining-post.js'
+import { Radar } from './buildings/radar.js'
+import { Smith } from './buildings/smith.js'
+import { Storage } from './buildings/storage.js'
 import { Stats } from './stats.js'
 
 export class Game {
@@ -22,6 +28,7 @@ export class Game {
 
         this.totalXDelt = 0
         this.totalYDelt = 0
+        this.danger = false
         
         //setting up stage
         //UI variables
@@ -57,14 +64,33 @@ export class Game {
             cochinium: 0
         } 
 
+        this.bfsFields = {
+            enemy: new Map(),
+            colony: new Map(),
+            queen: new Map()
+        }
+        this.activeBfsDebugField = null
+        this.bfsDebugLabels = new Map()
+        this.bfsDebugTextStyle = new PIXI.TextStyle({
+            fontFamily: 'Courier New',
+            fontSize: 36,
+            fill: '#ffd84d',
+            align: 'center',
+            stroke: {
+                color: '#000000',
+                width: 3
+            }
+        })
+
         this.stats = new Stats(this)
 
         this.unlockedBuildings = [
-            new BUILD.Factory(BUILD.AlgaeFarm,this),
-            new BUILD.Factory(BUILD.Storage,this),
-            new BUILD.Factory(BUILD.Smith,this),
-            new BUILD.Factory(BUILD.MiningPost,this),
-            new BUILD.Factory(BUILD.Radar,this)
+            new Factory(AlgaeFarm,this),
+            new Factory(Barracks,this),
+            new Factory(Storage,this),
+            new Factory(Smith,this),
+            new Factory(MiningPost,this),
+            new Factory(Radar,this)
         ]
 
 
@@ -113,7 +139,7 @@ export class Game {
                         if (myPath.length > 1) {
                             this.game.displayPath(myPath,this.selectedPaths)
                         }
-                    } else if (this.object instanceof BUILD.Building) {
+                    } else if (this.object instanceof Building) {
                         for (let tile of this.object.tileArray) {
                             for (let n of tile.getNeighbors()) {
                                 if (!this.object.tileArray.includes(n)) {
@@ -164,6 +190,124 @@ export class Game {
                 }
             }
         }(this.tileContainer,this.uiContainer,this)
+    }
+
+    syncWorldSpriteTransforms(extraScreenDx = 0, extraScreenDy = 0, { skipFloatingBuildingOffset = false } = {}) {
+        const dx = Number.isFinite(extraScreenDx) ? extraScreenDx : 0
+        const dy = Number.isFinite(extraScreenDy) ? extraScreenDy : 0
+
+        for (const child of this.tileContainer.children) {
+            child.scale.set(this.currentScale)
+
+            if (!Number.isFinite(child.baseX) || !Number.isFinite(child.baseY)) {
+                continue
+            }
+
+            if (skipFloatingBuildingOffset && child === this.floatingBuilding.sprite) {
+                continue
+            }
+
+            child.x = this.midx + ((child.baseX - this.midx) * this.currentScale) + dx
+            child.y = this.midy + ((child.baseY - this.midy) * this.currentScale) + dy
+        }
+    }
+
+    previewWorldPan(screenDx, screenDy) {
+        this.syncWorldSpriteTransforms(screenDx, screenDy, { skipFloatingBuildingOffset: true })
+    }
+
+    formatBfsDebugValue(value) {
+        if (!Number.isFinite(value)) {
+            return ''
+        }
+
+        return String(value)
+    }
+
+    showBfsFieldDebug(cave, fieldName, { rebuild = true } = {}) {
+        if (!cave || typeof fieldName !== 'string') {
+            return false
+        }
+
+        if (rebuild && typeof cave.rebuildBfsField === 'function') {
+            cave.rebuildBfsField(fieldName)
+        }
+
+        const field = typeof cave.getBfsField === 'function' ? cave.getBfsField(fieldName) : null
+        if (!(field instanceof Map)) {
+            return false
+        }
+
+        this.clearBfsFieldDebug()
+        this.activeBfsDebugField = fieldName
+
+        for (const tile of cave.getTiles()) {
+            if (typeof cave.isTileRevealed === 'function' ? !cave.isTileRevealed(tile) : tile?.sprite?.visible !== true) {
+                continue
+            }
+
+            const label = new PIXI.Text({ text: '', style: this.bfsDebugTextStyle })
+            label.anchor.set(0.5)
+            label.eventMode = 'none'
+            label.zIndex = 2.5
+            label.text = this.formatBfsDebugValue(field.get(tile.key) ?? Infinity)
+            label.baseX = tile.sprite.baseX
+            label.baseY = tile.sprite.baseY
+            label.x = tile.sprite.x
+            label.y = tile.sprite.y
+            label.scale.set(this.currentScale)
+            label.visible = true
+            this.tileContainer.addChild(label)
+            this.bfsDebugLabels.set(tile.key, label)
+        }
+
+        return true
+    }
+
+    refreshBfsFieldDebug(cave, { rebuild = true } = {}) {
+        if (!this.activeBfsDebugField) {
+            return false
+        }
+
+        return this.showBfsFieldDebug(cave, this.activeBfsDebugField, { rebuild })
+    }
+
+    clearBfsFieldDebug() {
+        for (const label of this.bfsDebugLabels.values()) {
+            if (label.parent) {
+                label.parent.removeChild(label)
+            }
+            label.destroy()
+        }
+
+        this.bfsDebugLabels.clear()
+        this.activeBfsDebugField = null
+    }
+
+    panWorldByScreenDelta(screenDx, screenDy, { skipFloatingBuildingOffset = false } = {}) {
+        const dx = Number.isFinite(screenDx) ? screenDx : 0
+        const dy = Number.isFinite(screenDy) ? screenDy : 0
+
+        if (dx === 0 && dy === 0) {
+            return
+        }
+
+        const baseDx = dx * (1 / this.currentScale)
+        const baseDy = dy * (1 / this.currentScale)
+
+        this.totalXDelt -= baseDx
+        this.totalYDelt -= baseDy
+
+        for (const child of this.tileContainer.children) {
+            if (!Number.isFinite(child.baseX) || !Number.isFinite(child.baseY)) {
+                continue
+            }
+
+            child.baseX += baseDx
+            child.baseY += baseDy
+        }
+
+        this.syncWorldSpriteTransforms(0, 0, { skipFloatingBuildingOffset })
     }
 
     on(eventName, listener) {
@@ -304,8 +448,7 @@ export class Game {
             }
 
             if (n.getBase() === 'wall') {
-                if (n.sprite?.visible === false) {
-                    n.sprite.visible = true
+                if (typeof cave.revealTile === 'function' && cave.revealTile(n) > 0) {
                     changedKeys.add(n.key)
                 }
                 continue
@@ -325,8 +468,8 @@ export class Game {
 
                 if (wallTile.getBase() === 'wall') {
                     wallTile.creatureCanFit = false
-                    if (wallTile.sprite?.visible === false) {
-                        wallTile.sprite.visible = true
+                    if (typeof cave.revealTile === 'function' && cave.revealTile(wallTile) > 0) {
+                        changedKeys.add(wallTile.key)
                     }
                     continue
                 }
@@ -367,10 +510,12 @@ export class Game {
             newTile.anchor.set(0.5)
             newTile.interactive = true;
             newTile.buttonMode = true;
+            newTile.visible = false
 
             newTile.scale.set(this.currentScale)
 
             this.tileContainer.addChild(newTile)
+            cave.revealTile(wallTile)
 
             newTile.on("mouseup", (interactionEvent) => {
                 this.whenWallMined(interactionEvent, newTile, cave, newCoords)
@@ -385,11 +530,17 @@ export class Game {
             cave.notifyMineableTilesChanged([...changedKeys])
         }
 
+        if (typeof cave.rebalanceAllBfsFields === 'function') {
+            cave.rebalanceAllBfsFields([...changedKeys])
+        }
+
         this.emitMineEvents('wall', cave, emptyCoords, source)
         return true
     }
 
     cleanActive() {
+
+        this.clearBfsFieldDebug()
 
         for (let sprite of this.floatingPaths) {
             sprite.parent.removeChild(sprite);
@@ -404,7 +555,9 @@ export class Game {
         this.movePath = false
         this.buildMode = false
         this.floatingBuilding.building = null
-        this.tileContainer.removeChild(this.floatingBuilding.sprite)
+        if (this.floatingBuilding.sprite?.parent) {
+            this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
+        }
         this.floatingBuilding.sprite = null
         this.floatingBuilding.rotation = 0
 

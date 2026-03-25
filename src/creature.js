@@ -2,16 +2,31 @@
 import { NodeQueue } from './queue-data.js'
 import { toKey } from './cave.js'
 
+const MOVEMENT_OFFSET_MIN_DISTANCE = 1
+const MOVEMENT_OFFSET_MAX_DISTANCE = 15
+
+function getRandomMovementOffset(minDistance = MOVEMENT_OFFSET_MIN_DISTANCE, maxDistance = MOVEMENT_OFFSET_MAX_DISTANCE) {
+    const safeMin = Number.isFinite(minDistance) ? minDistance : MOVEMENT_OFFSET_MIN_DISTANCE
+    const safeMax = Number.isFinite(maxDistance) ? maxDistance : MOVEMENT_OFFSET_MAX_DISTANCE
+    const clampedMax = Math.max(safeMin, safeMax)
+    const angleDegrees = Math.random() * 360
+    const angleRadians = angleDegrees * (Math.PI / 180)
+    const distance = safeMin + (Math.random() * (clampedMax - safeMin))
+
+    return {
+        x: Math.cos(angleRadians) * distance,
+        y: Math.sin(angleRadians) * distance
+    }
+}
+
 export class Creature {
     constructor(name,location,sprite,game) {
         this.name = name
         this.queue = new NodeQueue()
         this.pathPreview = []
-        this.inventory = {
-            type: null,
-            amount: 0
-        }
-        this.inventoryCapacity = 5
+        this.health = 20
+        this.maxHealth = this.health
+        this.damage = 5
         this.location = location
         this.sprite = sprite
         this.game = game
@@ -42,59 +57,66 @@ export class Creature {
         this.pathPreview = []
     }
 
-    getInventory() {
-        return this.inventory
+    getDamage() {
+        return this.damage
     }
 
-    hasInventory() {
-        return this.inventory.amount > 0
+    getMaxHealth() {
+        return this.maxHealth
     }
 
-    getInventoryCapacity() {
-        return this.inventoryCapacity
+    restoreHealth() {
+        this.health = this.getMaxHealth()
+        return this.health
     }
 
-    getInventorySpace() {
-        return Math.max(0, this.inventoryCapacity - this.inventory.amount)
-    }
-
-    addToInventory(resourceType, amount) {
-        if (typeof resourceType !== 'string' || !Number.isFinite(amount) || amount <= 0) {
+    dealDamage(target) {
+        if (!target || target === this || typeof target.takeDamage !== 'function') {
             return 0
         }
 
-        if (!this.hasInventory()) {
-            this.inventory.type = resourceType
-        }
+        return target.takeDamage(this.getDamage(), this)
+    }
 
-        if (this.inventory.type !== resourceType) {
+    takeDamage(amount, source = null) {
+        if (!Number.isFinite(amount) || amount <= 0 || this.health <= 0) {
             return 0
         }
 
-        const added = Math.min(this.getInventorySpace(), amount)
-        this.inventory.amount += added
+        const applied = Math.min(this.health, amount)
+        this.health -= applied
 
-        return added
-    }
-
-    removeFromInventory(amount) {
-        if (!Number.isFinite(amount) || amount <= 0) {
-            return 0
+        if (this.health <= 0) {
+            this.health = 0
+            this.removeFromGame(source)
         }
 
-        const removed = Math.min(this.inventory.amount, amount)
-        this.inventory.amount -= removed
-
-        if (this.inventory.amount === 0) {
-            this.inventory.type = null
-        }
-
-        return removed
+        return applied
     }
 
-    clearInventory() {
-        this.inventory.type = null
-        this.inventory.amount = 0
+    cleanupBeforeRemoval() {
+        return
+    }
+
+    removeFromGame(source = null) {
+        if (this.cave && typeof this.cave.removeCreature === 'function') {
+            return this.cave.removeCreature(this, source)
+        }
+
+        this.clearActionQueue()
+        this.cleanupBeforeRemoval()
+
+        if (this.sprite?.parent) {
+            this.sprite.parent.removeChild(this.sprite)
+        }
+
+        if (typeof this.sprite?.destroy === 'function') {
+            this.sprite.destroy()
+        }
+
+        this.location = { x: null, y: null }
+        this.cave = null
+        return true
     }
 
     enqueueAction(actionFn) {
@@ -111,6 +133,12 @@ export class Creature {
         }
         if (this.assignment === "farmer" && typeof this.farmerStep1 === 'function') {
             return () => this.farmerStep1()
+        }
+        if (this.assignment === "fighter" && typeof this.fighterStep1 === 'function') {
+            return () => this.fighterStep1()
+        }
+        if (this.assignment === "enemy" && typeof this.enemyStep1 === 'function') {
+            return () => this.enemyStep1()
         }
         return null
     }
@@ -246,6 +274,37 @@ export class Creature {
             return null
         }
         return nextAction()
+    }
+
+    getSpritePlacementForTile(tileSprite, { randomize = false } = {}) {
+        if (!tileSprite || !Number.isFinite(tileSprite.x) || !Number.isFinite(tileSprite.y)) {
+            return null
+        }
+
+        const scale = Number.isFinite(this.game?.currentScale) ? this.game.currentScale : 1
+        const baseX = Number.isFinite(tileSprite.baseX) ? tileSprite.baseX : tileSprite.x
+        const baseY = Number.isFinite(tileSprite.baseY) ? tileSprite.baseY : tileSprite.y
+        const offset = randomize ? getRandomMovementOffset() : { x: 0, y: 0 }
+
+        return {
+            x: tileSprite.x + (offset.x * scale),
+            y: tileSprite.y + (offset.y * scale),
+            baseX: baseX + offset.x,
+            baseY: baseY + offset.y
+        }
+    }
+
+    placeSpriteOnTile(tileSprite, options = {}) {
+        const placement = this.getSpritePlacementForTile(tileSprite, options)
+        if (!placement || !this.sprite) {
+            return false
+        }
+
+        this.sprite.x = placement.x
+        this.sprite.y = placement.y
+        this.sprite.baseX = placement.baseX
+        this.sprite.baseY = placement.baseY
+        return true
     }
 
     performMove(next) {
