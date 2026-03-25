@@ -78,6 +78,9 @@ export class Building {
         this.sprite = null
         this.hasStation = station
         this.location = {x: null, y: null}
+        this.health = 100
+        this.maxHealth = this.health
+        this.cave = null
     }
 
     rotateMap() {
@@ -118,6 +121,60 @@ export class Building {
     }
     getDescription() {
         return this.description
+    }
+
+    getHealth() {
+        return this.health
+    }
+
+    getMaxHealth() {
+        return this.maxHealth
+    }
+
+    restoreHealth() {
+        this.health = this.getMaxHealth()
+        return this.health
+    }
+
+    takeDamage(amount, source = null) {
+        if (!Number.isFinite(amount) || amount <= 0 || this.health <= 0) {
+            return 0
+        }
+
+        const applied = Math.min(this.health, amount)
+        this.health -= applied
+
+        if (this.health <= 0) {
+            this.health = 0
+            this.removeFromGame(source)
+        }
+
+        return applied
+    }
+
+    cleanupBeforeRemoval() {
+        return
+    }
+
+    removeFromGame(source = null) {
+        if (this.cave && typeof this.cave.removeBuilding === 'function') {
+            return this.cave.removeBuilding(this, source)
+        }
+
+        this.cleanupBeforeRemoval()
+
+        if (this.sprite?.parent) {
+            this.sprite.parent.removeChild(this.sprite)
+        }
+
+        if (typeof this.sprite?.destroy === 'function') {
+            this.sprite.destroy()
+        }
+
+        this.tileArray = []
+        this.location = { x: null, y: null }
+        this.cave = null
+        return true
     }
 
 }

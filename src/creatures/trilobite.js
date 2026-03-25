@@ -494,59 +494,6 @@ export class Trilobite extends Creature {
         return null
     }
 
-    findNearestEnemyPath() {
-        if (!this.cave) {
-            return null
-        }
-
-        let bestTarget = null
-        let bestLength = Infinity
-        let bestDistance = Infinity
-
-        for (const enemy of this.getEnemyCreatures()) {
-            const enemyTileKey = toKey(enemy.location)
-            if (this.isAdjacentToTileKey(enemyTileKey)) {
-                return {
-                    enemy,
-                    tileKey: enemyTileKey,
-                    path: [{ x: this.location.x, y: this.location.y }]
-                }
-            }
-
-            const enemyTile = this.cave.getTile(enemyTileKey)
-            if (!enemyTile) {
-                continue
-            }
-
-            for (const neighbor of enemyTile.getNeighbors()) {
-                if (!neighbor.creatureFits()) {
-                    continue
-                }
-
-                const path = this.cave.bfsPath(toKey(this.location), neighbor.key)
-                if (!path) {
-                    continue
-                }
-
-                const pathLength = path.length
-                const approachCoords = toCoords(neighbor.key)
-                const distance = squaredDistance(this.location, approachCoords)
-
-                if (pathLength < bestLength || (pathLength === bestLength && distance < bestDistance)) {
-                    bestTarget = {
-                        enemy,
-                        tileKey: enemyTileKey,
-                        path
-                    }
-                    bestLength = pathLength
-                    bestDistance = distance
-                }
-            }
-        }
-
-        return bestTarget
-    }
-
     queueFighterPath(path, mode = null, clearExisting = true) {
         if (!path || path.length === 0) {
             return false
@@ -698,31 +645,24 @@ export class Trilobite extends Creature {
             this.clearFighterTarget()
         }
 
-        const target = this.findNearestEnemyPath()
-        if (!target) {
+        const nextLocation = this.cave?.getBfsFieldNextStep('enemy', this.location)
+        if (!nextLocation) {
             this.clearFighterTarget()
             return this.fighterReturnToBarracks(false)
         }
 
-        this.fighterTargetTileKey = target.tileKey
-        if (!target.path || target.path.length < 2) {
-            if (this.isAdjacentToTileKey(this.fighterTargetTileKey)) {
-                return this.fighterStep2()
-            }
-            return false
-        }
-
-        return this.queueFighterPath(target.path, 'enemy')
+        this.clearActionQueue()
+        this.pathPreview.push({ x: nextLocation.x, y: nextLocation.y })
+        return this.fighterStepMove(nextLocation)
     }
 
-    fighterStepMove = (nextLocation, isLastStep = false) => {
+    fighterStepMove = (nextLocation) => {
         if (!this.ensureFighterState()) {
             return false
         }
 
         if (!this.game.danger) {
             if (this.fighterPathMode !== 'barracks') {
-                this.fighterPathMode = null
                 this.clearActionQueue()
                 return this.fighterStep1()
             }
@@ -733,10 +673,15 @@ export class Trilobite extends Creature {
                 this.clearActionQueue()
                 return false
             }
-        } else {
+        } else if (this.fighterPathMode === 'barracks') {
+            this.fighterPathMode = null
+            this.clearActionQueue()
+            return this.fighterStep1()
+        }
+
+        if (this.fighterPathMode !== 'barracks') {
             if (this.fighterTargetTileKey && !this.getEnemyAtTileKey(this.fighterTargetTileKey)) {
                 this.clearFighterTarget()
-                this.fighterPathMode = null
                 this.clearActionQueue()
                 return this.fighterStep3()
             }
@@ -744,49 +689,46 @@ export class Trilobite extends Creature {
             const adjacentEnemyTileKey = this.getAdjacentEnemyTileKey()
             if (adjacentEnemyTileKey) {
                 this.fighterTargetTileKey = adjacentEnemyTileKey
-                this.fighterPathMode = null
                 this.clearActionQueue()
                 return this.fighterStep2()
             }
         }
 
+        const wasBarracksMove = this.fighterPathMode === 'barracks'
         const moved = this.performMove(nextLocation)
         if (moved === false) {
-            this.fighterPathMode = null
+            if (wasBarracksMove) {
+                this.fighterPathMode = null
+            }
             this.clearActionQueue()
-            return this.fighterStep1()
+            return wasBarracksMove ? this.fighterReturnToBarracks(true) : this.fighterStep3()
         }
 
         if (this.pathPreview.length > 0) {
             this.pathPreview.shift()
         }
 
-        if (!this.game.danger) {
+        if (wasBarracksMove) {
             const assignedBarracks = this.getAssignedBarracks()
             if (assignedBarracks && this.isOnPassableBuildingTile(assignedBarracks, this.location)) {
                 this.fighterPathMode = null
                 this.clearActionQueue()
                 return false
             }
-        } else {
-            if (this.fighterTargetTileKey && this.isAdjacentToTileKey(this.fighterTargetTileKey)) {
-                this.fighterPathMode = null
-                this.clearActionQueue()
-                return this.fighterStep2()
-            }
 
-            const adjacentEnemyTileKey = this.getAdjacentEnemyTileKey()
-            if (adjacentEnemyTileKey) {
-                this.fighterTargetTileKey = adjacentEnemyTileKey
-                this.fighterPathMode = null
-                this.clearActionQueue()
-                return this.fighterStep2()
-            }
+            return moved
         }
 
-        if (isLastStep) {
-            this.fighterPathMode = null
-            return this.fighterStep1()
+        if (this.fighterTargetTileKey && this.isAdjacentToTileKey(this.fighterTargetTileKey)) {
+            this.clearActionQueue()
+            return this.fighterStep2()
+        }
+
+        const nextAdjacentEnemyTileKey = this.getAdjacentEnemyTileKey()
+        if (nextAdjacentEnemyTileKey) {
+            this.fighterTargetTileKey = nextAdjacentEnemyTileKey
+            this.clearActionQueue()
+            return this.fighterStep2()
         }
 
         return moved
@@ -979,19 +921,33 @@ export class Trilobite extends Creature {
             return this.farmerStep5()
         }
 
-        const queenTile = this.getClosestPassableBuildingTile(queen, this.location)
-        if (!queenTile) {
+        const nextLocation = this.cave?.getBfsFieldNextStep('queen', this.location)
+        if (!nextLocation) {
             this.enqueueAction(() => this.farmerStep1())
             return false
         }
 
-        const navFallback = () => this.farmerStep1()
-        if (!this.navigateTo(queenTile, navFallback)) {
+        this.clearActionQueue()
+        this.pathPreview.push({ x: nextLocation.x, y: nextLocation.y })
+        return this.farmerStepMoveToQueen(nextLocation)
+    }
+
+    farmerStepMoveToQueen = (nextLocation) => {
+        if (!this.ensureFarmerState()) {
             return false
         }
 
-        this.enqueueAction(() => this.farmerStep5())
-        return true
+        const moved = this.performMove(nextLocation)
+        if (moved === false) {
+            this.clearActionQueue()
+            return this.farmerStep4()
+        }
+
+        if (this.pathPreview.length > 0) {
+            this.pathPreview.shift()
+        }
+
+        return moved
     }
 
     farmerStep5 = () => {

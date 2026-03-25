@@ -56,7 +56,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 6. Build a route that visits passable farm tiles and returns to origin.
 7. Move along farm route and attempt harvest at each step.
 8. Harvest succeeds when `Math.random() < growth/period`; success gives fixed `harvestYield`.
-9. After harvest, navigate to a passable queen tile.
+9. After harvest, follow the shared queen BFS field one tile at a time until standing on a passable queen tile.
 10. Feed queen all carried algae.
 11. If queen quota is reached, queen may spawn broodlings and increase next quota.
 12. Loop back to step 1.
@@ -75,26 +75,25 @@ This document reflects the currently implemented gameplay and UI behavior in the
 3. If already on a passable barracks tile, idle there until danger rises.
 4. If `game.danger` is `true` and the stored target tile is adjacent, attack the enemy on that tile.
 5. If a neighboring tile contains an enemy, set that tile as the fighter target and attack.
-6. Otherwise, find the nearest reachable enemy by BFS path to an adjacent tile and queue fighter-aware movement toward it.
-7. Fighter movement steps re-check adjacent enemies before and after each move so queued pathing can be interrupted for combat.
+6. Otherwise, read the current `enemy` BFS field and move one tile to a neighboring passable tile with a lower value.
+7. Fighters recompute their adjacent-enemy checks before and after each combat move so movement can still be interrupted for attacks.
 8. If no reachable enemy exists while danger is active, navigate back to the least-loaded barracks and rejoin its assignment set.
 - Failure handling:
 1. Losing the target enemy clears the fighter target and triggers a fresh enemy search.
-2. Pathing failure clears queued fighter steps and restarts from step 1.
+2. Failed combat movement clears queued fighter steps and restarts from step 1.
 3. Role checks enforce that only barracks remain in `assignedBuilding` while fighter behavior is active.
 
 ### Enemy Behavior
 - Trigger: `Enemy` creatures spawn with `assignment = 'enemy'`.
 - Workflow (`Enemy` step chain):
-1. If the stored hostile target tile is adjacent, attack the creature on that tile.
-2. Otherwise, check neighboring tiles for a non-enemy creature; if found, store that tile as the target and attack.
-3. Otherwise, if the stored target is gone or no movement is queued, find the nearest reachable non-enemy creature by BFS path to an adjacent tile.
-4. Queue movement along that path.
-5. Each queued move re-checks target validity and neighboring hostiles before and after moving so travel can be interrupted for combat.
-6. If no hostile creatures remain, do nothing; defeat-state handling is not implemented yet.
+1. If the stored hostile tile is adjacent, attack the trilobite or building on that tile.
+2. Otherwise, check neighboring tiles for a trilobite first, then for a building; if found, store that tile as the target and attack.
+3. Otherwise, read the current `colony` BFS field, which is seeded from trilobites plus adjacent tiles around non-passable colony-building tiles, and move one tile to a neighboring passable tile with a lower value.
+4. Enemy movement re-checks target validity and adjacent trilobites/buildings before and after moving so travel can still be interrupted for combat.
+5. If no lower-value colony tile is reachable, do nothing.
 - Failure handling:
-1. Losing the target creature clears the stored target and triggers a fresh hostile search.
-2. Pathing failure clears queued enemy steps and restarts from step 1.
+1. Losing the target trilobite/building clears the stored target and triggers a fresh hostile search.
+2. Failed combat movement clears queued enemy steps and restarts from step 1.
 
 ### Manual Movement (Role-Agnostic)
 - Trigger:
@@ -118,6 +117,10 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `sprite: PIXI.Sprite | null`
 - `hasStation: boolean`
 - `location: { x: number | null, y: number | null }`
+- `health: number` (starts 100)
+- `maxHealth: number` (starts 100)
+- `health: number` (starts 100)
+- `maxHealth: number` (starts 100)
 
 ### `openMap` semantics during placement
 - `0`: tile occupied by building, not passable.
@@ -135,6 +138,8 @@ This document reflects the currently implemented gameplay and UI behavior in the
 8. `Cave.build` writes building occupancy/passability, stores `tileArray`, adds sprite.
 9. Optional `onBuilt(cave)` hook runs.
 10. `Escape` or successful placement exits active UI state.
+11. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave and their footprint becomes passable again.
+11. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave and their footprint becomes passable again.
 
 ### `Factory`
 - Purpose: lightweight blueprint wrapper for unlocked buildings.
@@ -260,7 +265,14 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `Cave extends Graph` and adds:
 - cave generation,
 - tile/building/creature runtime state,
+- `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
+- `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
+- `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
 - pathfinding (`bfsPath`),
+- game-held BFS distance fields for `enemy`, `colony`, and `queen`, computed only over revealed tiles,
+- full rebuilds of the `enemy` and `colony` fields during combat-phase handoff,
+- incremental BFS-field rebalancing when buildings are placed, walls are mined, or creatures spawn,
+- creature deaths rely on the next combat-phase BFS rebuild instead of triggering an immediate rebalance,
 - movement, spawn, and removal rules,
 - danger-state syncing for enemy spawn/death, including clearing `game.danger` when the last enemy is removed,
 - full-party healing for all remaining creatures when the last enemy is removed,
@@ -273,6 +285,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - path queue/path preview,
 - combat state (`health`, `maxHealth`, `damage`) and basic damage/death handling,
 - navigation helpers,
+- sprite-placement helper that snaps movers to the destination tile center and then applies a fresh random 1-15 px radial offset on each completed move,
 - generic selection/build interactions.
 - `Trilobite extends Creature`:
 - inventory model,
@@ -282,7 +295,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `pendingMineTileKey` for reserved mining targets.
 - `fighterTargetTileKey` for the current enemy tile target.
 - `Enemy extends Creature`:
-- autonomous combat workflow that targets the nearest non-enemy creature,
+- autonomous combat workflow that attacks adjacent trilobites or buildings and otherwise follows the shared colony BFS field toward trilobites or non-passable colony-building targets,
 - `enemyTargetTileKey` for the current hostile tile target.
 
 ### Building layer
@@ -291,7 +304,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `Factory` wraps buildable classes for menu/unlock usage.
 
 ### UI/controller layer
-- `Game` holds global state for selection, drag/zoom, build mode, floating paths/sprites, active menu, and `danger`.
+- `Game` holds global state for selection, drag/zoom, build mode, floating paths/sprites, paused BFS-debug overlays, active menu, and `danger`.
 - `Menu` renders context actions for selected creature/building and build-option overlays.
 
 ### Supporting data types
@@ -348,14 +361,17 @@ This document reflects the currently implemented gameplay and UI behavior in the
 1. If dragging, commit pan delta into base coordinates.
 2. End drag operation.
 - `keydown`:
-1. `Enter`: run one simulation tick.
-2. Tick order: creatures execute queued behavior first, then buildings with `tick()` hooks update.
-3. `Space`: toggle auto-tick pause/run.
-4. `1`/`2`/`3`/`4`: set tick speed to 500/250/100/50 ms.
-5. `P`: spawn a debug enemy on a random revealed, passable, unoccupied tile if one exists, then log tick state (creatures and mining posts).
-6. `Escape`: `game.cleanActive()` (close menus, clear previews, cancel active mode).
-7. `R`: if building placement active, rotate floating building and anchor/orientation state.
-8. Hold `W`/`A`/`S`/`D` to continuously pan the world at 800 screen px/s by applying the same base-position camera offset updates used by click-and-drag panning.
+1. `Enter`: run one simulation tick and refresh the active BFS debug overlay if one is being shown.
+2. Tick order:
+- If `game.danger` is `true`, rebuild the `enemy` BFS field, process all non-enemy creatures once, rebuild the `colony` BFS field, process all enemies once, then run buildings with `tick()` hooks.
+- If `game.danger` is `false`, do not rebuild either combat BFS field; process non-enemy creatures once so fighters can return to barracks or idle, skip enemy processing, then run buildings with `tick()` hooks.
+3. `Space`: call `game.cleanActive()` and then toggle auto-tick pause/run.
+4. While paused, `1`/`2`/`3` display the `queen`/`enemy`/`colony` BFS field as centered yellow tile labels; finite distances are shown and blocked or unreachable revealed tiles are left blank; `4` does nothing.
+5. While unpaused, `1`/`2`/`3`/`4` set tick speed to 500/250/100/50 ms.
+6. `P`: spawn a debug enemy on a random revealed, passable, unoccupied tile if one exists, then log tick state (creatures and mining posts).
+7. `Escape`: `game.cleanActive()` (close menus, clear previews, cancel active mode, clear BFS debug labels).
+8. `R`: if building placement active, rotate floating building and anchor/orientation state.
+9. Hold `W`/`A`/`S`/`D` to continuously pan the world at 800 screen px/s by applying the same base-position camera offset updates used by click-and-drag panning.
 - `keyup`:
 1. Releasing `W`/`A`/`S`/`D` clears that held pan direction.
 - `blur`:
@@ -432,8 +448,9 @@ This document reflects the currently implemented gameplay and UI behavior in the
 ### Menu/Game state interaction
 - `cleanActive()` is the central reset:
 1. Destroys floating path sprites and building edge highlights.
-2. Exits move/build modes.
-3. Removes floating building sprite.
-4. Closes and destroys active menu sprites.
-5. Clears selected object and selected-path overlays.
+2. Clears any active BFS debug overlay labels.
+3. Exits move/build modes.
+4. Removes floating building sprite.
+5. Closes and destroys active menu sprites.
+6. Clears selected object and selected-path overlays.
 - Several workflows call `cleanActive()` to prevent mode overlap and stale UI.

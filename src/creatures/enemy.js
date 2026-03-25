@@ -2,12 +2,6 @@ import * as PIXI from 'pixi.js'
 import { Creature } from '../creature.js'
 import { toCoords, toKey } from '../cave.js'
 
-function squaredDistance(a, b) {
-    const dx = a.x - b.x
-    const dy = a.y - b.y
-    return (dx * dx) + (dy * dy)
-}
-
 function manhattanDistance(a, b) {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 }
@@ -16,13 +10,16 @@ function isEnemyCreature(creature) {
     return creature?.assignment === 'enemy' || creature?.constructor?.name === 'Enemy'
 }
 
+function isTrackedTrilobite(creature) {
+    return creature?.constructor?.name === 'Trilobite'
+}
+
 export class Enemy extends Creature {
 
     constructor(name, location, game, sprite = new PIXI.Sprite("Enemy")) {
         super(name, location, sprite, game)
         this.assignment = 'enemy'
         this.enemyTargetTileKey = null
-        this.enemyPathMode = null
     }
 
     getBehavior() {
@@ -31,7 +28,6 @@ export class Enemy extends Creature {
 
     cleanupBeforeRemoval() {
         this.enemyTargetTileKey = null
-        this.enemyPathMode = null
     }
 
     enemyBehavior = () => {
@@ -44,7 +40,6 @@ export class Enemy extends Creature {
         }
 
         this.enemyTargetTileKey = null
-        this.enemyPathMode = null
         const fallbackBehavior = this.getBehavior()
         if (typeof fallbackBehavior === 'function' && fallbackBehavior !== this.enemyBehavior) {
             fallbackBehavior.call(this)
@@ -56,14 +51,14 @@ export class Enemy extends Creature {
         this.enemyTargetTileKey = null
     }
 
-    getHostileCreatures() {
+    getHostileTrilobites() {
         if (!this.cave) {
             return []
         }
 
         const hostiles = []
         for (const creature of this.cave.creatures) {
-            if (!creature || creature === this || isEnemyCreature(creature)) {
+            if (!creature || creature === this || !isTrackedTrilobite(creature)) {
                 continue
             }
 
@@ -78,13 +73,35 @@ export class Enemy extends Creature {
             return null
         }
 
-        for (const hostile of this.getHostileCreatures()) {
+        for (const hostile of this.getHostileTrilobites()) {
             if (toKey(hostile.location) === tileKey) {
                 return hostile
             }
         }
 
         return null
+    }
+
+    getHostileBuildingAtTileKey(tileKey) {
+        if (!this.cave || !tileKey) {
+            return null
+        }
+
+        const tile = this.cave.getTile(tileKey)
+        if (!tile) {
+            return null
+        }
+
+        const building = tile.getBuilt()
+        if (!building || building.cave !== this.cave || building.health <= 0) {
+            return null
+        }
+
+        return building
+    }
+
+    getHostileTargetAtTileKey(tileKey) {
+        return this.getHostileAtTileKey(tileKey) ?? this.getHostileBuildingAtTileKey(tileKey)
     }
 
     isAdjacentToTileKey(tileKey, location = this.location) {
@@ -106,104 +123,24 @@ export class Enemy extends Creature {
             return null
         }
 
+        let adjacentBuildingTileKey = null
         for (const neighbor of currentTile.getNeighbors()) {
             if (this.getHostileAtTileKey(neighbor.key)) {
                 return neighbor.key
             }
-        }
 
-        return null
-    }
-
-    findNearestHostilePath() {
-        if (!this.cave) {
-            return null
-        }
-
-        let bestTarget = null
-        let bestLength = Infinity
-        let bestDistance = Infinity
-
-        for (const hostile of this.getHostileCreatures()) {
-            const hostileTileKey = toKey(hostile.location)
-            if (this.isAdjacentToTileKey(hostileTileKey)) {
-                return {
-                    creature: hostile,
-                    tileKey: hostileTileKey,
-                    path: [{ x: this.location.x, y: this.location.y }]
-                }
-            }
-
-            const hostileTile = this.cave.getTile(hostileTileKey)
-            if (!hostileTile) {
-                continue
-            }
-
-            for (const neighbor of hostileTile.getNeighbors()) {
-                if (!neighbor.creatureFits()) {
-                    continue
-                }
-
-                const path = this.cave.bfsPath(toKey(this.location), neighbor.key)
-                if (!path) {
-                    continue
-                }
-
-                const pathLength = path.length
-                const approachCoords = toCoords(neighbor.key)
-                const distance = squaredDistance(this.location, approachCoords)
-
-                if (pathLength < bestLength || (pathLength === bestLength && distance < bestDistance)) {
-                    bestTarget = {
-                        creature: hostile,
-                        tileKey: hostileTileKey,
-                        path
-                    }
-                    bestLength = pathLength
-                    bestDistance = distance
-                }
+            if (!adjacentBuildingTileKey && this.getHostileBuildingAtTileKey(neighbor.key)) {
+                adjacentBuildingTileKey = neighbor.key
             }
         }
 
-        return bestTarget
-    }
-
-    queueEnemyPath(path, mode = null, clearExisting = true) {
-        if (!path || path.length === 0) {
-            return false
-        }
-
-        if (clearExisting) {
-            this.clearActionQueue()
-        }
-
-        if (path.length < 2) {
-            this.enemyPathMode = null
-            return true
-        }
-
-        this.enemyPathMode = mode
-
-        const steps = [...path]
-        steps.shift()
-
-        for (let i = 0; i < steps.length; i++) {
-            const step = steps[i]
-            const next = { x: step.x, y: step.y }
-            const isLastStep = i === (steps.length - 1)
-            this.pathPreview.push(next)
-            this.enqueueAction(() => this.enemyStepMove(next, isLastStep))
-        }
-
-        return true
+        return adjacentBuildingTileKey
     }
 
     enemyStep1 = () => {
         if (!this.ensureEnemyState()) {
             return false
         }
-
-        this.enemyPathMode = null
 
         if (this.enemyTargetTileKey && this.isAdjacentToTileKey(this.enemyTargetTileKey)) {
             return this.enemyStep2()
@@ -227,7 +164,7 @@ export class Enemy extends Creature {
             return this.enemyStep3()
         }
 
-        const hostile = this.getHostileAtTileKey(this.enemyTargetTileKey)
+        const hostile = this.getHostileTargetAtTileKey(this.enemyTargetTileKey)
         if (!hostile) {
             this.clearEnemyTarget()
             return this.enemyStep3()
@@ -238,7 +175,7 @@ export class Enemy extends Creature {
         }
 
         const dealt = this.dealDamage(hostile)
-        if (!this.getHostileAtTileKey(this.enemyTargetTileKey)) {
+        if (!this.getHostileTargetAtTileKey(this.enemyTargetTileKey)) {
             this.clearEnemyTarget()
         }
 
@@ -250,35 +187,28 @@ export class Enemy extends Creature {
             return false
         }
 
-        if (this.enemyTargetTileKey && !this.getHostileAtTileKey(this.enemyTargetTileKey)) {
+        if (this.enemyTargetTileKey && !this.getHostileTargetAtTileKey(this.enemyTargetTileKey)) {
             this.clearEnemyTarget()
         }
 
-        const target = this.findNearestHostilePath()
-        if (!target) {
+        const nextLocation = this.cave?.getBfsFieldNextStep('colony', this.location)
+        if (!nextLocation) {
             this.clearEnemyTarget()
             return false
         }
 
-        this.enemyTargetTileKey = target.tileKey
-        if (!target.path || target.path.length < 2) {
-            if (this.isAdjacentToTileKey(this.enemyTargetTileKey)) {
-                return this.enemyStep2()
-            }
-            return false
-        }
-
-        return this.queueEnemyPath(target.path, 'enemy')
+        this.clearActionQueue()
+        this.pathPreview.push({ x: nextLocation.x, y: nextLocation.y })
+        return this.enemyStepMove(nextLocation)
     }
 
-    enemyStepMove = (nextLocation, isLastStep = false) => {
+    enemyStepMove = (nextLocation) => {
         if (!this.ensureEnemyState()) {
             return false
         }
 
-        if (this.enemyTargetTileKey && !this.getHostileAtTileKey(this.enemyTargetTileKey)) {
+        if (this.enemyTargetTileKey && !this.getHostileTargetAtTileKey(this.enemyTargetTileKey)) {
             this.clearEnemyTarget()
-            this.enemyPathMode = null
             this.clearActionQueue()
             return this.enemyStep3()
         }
@@ -286,16 +216,14 @@ export class Enemy extends Creature {
         const adjacentHostileTileKey = this.getAdjacentHostileTileKey()
         if (adjacentHostileTileKey) {
             this.enemyTargetTileKey = adjacentHostileTileKey
-            this.enemyPathMode = null
             this.clearActionQueue()
             return this.enemyStep2()
         }
 
         const moved = this.performMove(nextLocation)
         if (moved === false) {
-            this.enemyPathMode = null
             this.clearActionQueue()
-            return this.enemyStep1()
+            return this.enemyStep3()
         }
 
         if (this.pathPreview.length > 0) {
@@ -303,7 +231,6 @@ export class Enemy extends Creature {
         }
 
         if (this.enemyTargetTileKey && this.isAdjacentToTileKey(this.enemyTargetTileKey)) {
-            this.enemyPathMode = null
             this.clearActionQueue()
             return this.enemyStep2()
         }
@@ -311,14 +238,8 @@ export class Enemy extends Creature {
         const nextAdjacentHostileTileKey = this.getAdjacentHostileTileKey()
         if (nextAdjacentHostileTileKey) {
             this.enemyTargetTileKey = nextAdjacentHostileTileKey
-            this.enemyPathMode = null
             this.clearActionQueue()
             return this.enemyStep2()
-        }
-
-        if (isLastStep) {
-            this.enemyPathMode = null
-            return this.enemyStep1()
         }
 
         return moved

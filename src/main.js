@@ -11,6 +11,10 @@ import { Game } from './game.js'
 const app = new PIXI.Application();
 let gamePaused = true
 
+function isEnemyCreature(creature) {
+    return creature?.assignment === 'enemy' || creature?.constructor?.name === 'Enemy'
+}
+
 function formatInventory(inv) {
     if (!inv || inv.amount <= 0 || !inv.type) {
         return 'empty'
@@ -67,9 +71,9 @@ function getRandomRevealedSpawnTile(cave) {
         }
     }
 
-    const revealedTiles = cave.getTiles().filter((tile) => {
-        return tile?.sprite?.visible === true && tile.creatureFits() && !occupiedTileKeys.has(tile.key)
-    })
+    const revealedTiles = typeof cave.getRevealedTiles === 'function'
+        ? cave.getRevealedTiles().filter((tile) => tile?.creatureFits() && !occupiedTileKeys.has(tile.key))
+        : cave.getTiles().filter((tile) => tile?.sprite?.visible === true && tile.creatureFits() && !occupiedTileKeys.has(tile.key))
 
     if (revealedTiles.length === 0) {
         return null
@@ -177,8 +181,24 @@ async function preload()
         tickCount++
         const tickStart = performance.now()
 
+        if (game.danger) {
+            cave.rebuildBfsField('enemy')
+        }
         for (let creature of cave.creatures) {
+            if (isEnemyCreature(creature)) {
+                continue
+            }
             creature.move()
+        }
+
+        if (game.danger) {
+            cave.rebuildBfsField('colony')
+            for (let creature of cave.creatures) {
+                if (!isEnemyCreature(creature)) {
+                    continue
+                }
+                creature.move()
+            }
         }
 
         for (const building of cave.buildings) {
@@ -346,25 +366,40 @@ async function preload()
         }
 
         if (e.key ==='Enter') {
-            // console.log('Enter pressed')
             runTick()
+            game.refreshBfsFieldDebug(cave)
         } else if (e.code === 'Space') {
             e.preventDefault()
             if (e.repeat) {
                 return
             }
+            game.cleanActive()
             gamePaused = !gamePaused
-            // console.log(`Auto-tick ${gamePaused ? 'paused' : 'running'} (${tickSpeedMs}ms)`)
         } else if (e.key === '1') {
-            tickSpeedMs = 500
+            if (gamePaused) {
+                game.showBfsFieldDebug(cave, 'queen')
+            } else {
+                tickSpeedMs = 500
+            }
         } else if (e.key === '2') {
-            tickSpeedMs = 250
+            if (gamePaused) {
+                game.showBfsFieldDebug(cave, 'enemy')
+            } else {
+                tickSpeedMs = 250
+            }
         } else if (e.key === '3') {
-            tickSpeedMs = 100
+            if (gamePaused) {
+                game.showBfsFieldDebug(cave, 'colony')
+            } else {
+                tickSpeedMs = 100
+            }
         } else if (e.key === '4') {
-            tickSpeedMs = 50
+            if (!gamePaused) {
+                tickSpeedMs = 50
+            }
         } else if (e.key === 'p' || e.key === 'P') {
             spawnDebugEnemy()
+            game.refreshBfsFieldDebug(cave)
             logTickState(cave, tickCount)
         } else if (e.key ==='Escape') {
             game.cleanActive()

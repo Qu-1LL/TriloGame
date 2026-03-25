@@ -59,8 +59,10 @@ export class Cave extends Graph {
         this.#generateCaveShrink();
         this.creatures = new Set();
         this.buildings = new Set();
+        this.revealedTiles = new Set();
         this.app = app
         this.game = game
+        this.resetBfsFields()
 
         for (let coords of this.tiles.keys()) {
             let myAsset = this.getTile(coords).getBase()
@@ -316,6 +318,7 @@ export class Cave extends Graph {
             return false
         }
         this.buildings.add(building)
+        building.cave = this
         building.setLocation(location.x,location.y)
 
         for(let x = 0; x < building.size.x; x++) {
@@ -395,7 +398,54 @@ export class Cave extends Graph {
         });
 
         this.game.tileContainer.addChild(sprite)
+        this.rebalanceAllBfsFields(building.tileArray.map((tile) => tile.key))
 
+        return true
+    }
+
+    removeBuilding(building, source = null) {
+        if (!building || !this.buildings.has(building)) {
+            return false
+        }
+
+        const dirtyKeys = []
+        for (const tile of building.tileArray) {
+            if (!tile) {
+                continue
+            }
+
+            dirtyKeys.push(tile.key)
+
+            if (tile.getBuilt() === building) {
+                tile.setBuilt(null)
+            }
+
+            tile.creatureCanFit = true
+        }
+
+        this.buildings.delete(building)
+
+        if (typeof building.cleanupBeforeRemoval === 'function') {
+            building.cleanupBeforeRemoval(source)
+        }
+
+        if (this.game?.selected?.object === building && typeof this.game.cleanActive === 'function') {
+            this.game.cleanActive()
+        }
+
+        if (building.sprite?.parent) {
+            building.sprite.parent.removeChild(building.sprite)
+        }
+
+        if (typeof building.sprite?.destroy === 'function') {
+            building.sprite.destroy()
+        }
+
+        building.tileArray = []
+        building.location = { x: null, y: null }
+        building.cave = null
+
+        this.rebalanceAllBfsFields(dirtyKeys)
         return true
     }
 
@@ -413,12 +463,26 @@ export class Cave extends Graph {
         return null
     }
 
+    isTileRevealed(tile) {
+        return this.revealedTiles.has(tile)
+    }
+
+    getRevealedTiles() {
+        return [...this.revealedTiles]
+    }
+
     revealTile(tile) {
-        if (!tile?.sprite || tile.sprite.visible !== false) {
+        if (!tile?.sprite) {
             return 0
         }
 
+        const wasRevealed = this.isTileRevealed(tile)
+        this.revealedTiles.add(tile)
         tile.sprite.visible = true
+
+        if (wasRevealed) {
+            return 0
+        }
         return 1
     }
 
@@ -600,6 +664,343 @@ export class Cave extends Graph {
         }
     }
 
+    getBfsFieldNames() {
+        return ['enemy', 'colony', 'queen']
+    }
+
+    isBfsTileRevealed(tile) {
+        return this.isTileRevealed(tile)
+    }
+
+    createEmptyBfsField() {
+        const field = new Map()
+        for (const tile of this.getTiles()) {
+            if (!this.isBfsTileRevealed(tile)) {
+                continue
+            }
+            field.set(tile.key, Infinity)
+        }
+        return field
+    }
+
+    getBfsField(fieldName) {
+        if (!this.game?.bfsFields || typeof fieldName !== 'string') {
+            return null
+        }
+
+        if (!(this.game.bfsFields[fieldName] instanceof Map)) {
+            this.game.bfsFields[fieldName] = this.createEmptyBfsField()
+        }
+
+        return this.game.bfsFields[fieldName]
+    }
+
+    syncBfsFieldCoverage(field) {
+        if (!(field instanceof Map)) {
+            return null
+        }
+
+        for (const tileKey of [...field.keys()]) {
+            if (this.isBfsTileRevealed(this.getTile(tileKey))) {
+                continue
+            }
+            field.delete(tileKey)
+        }
+
+        for (const tile of this.getTiles()) {
+            if (!this.isBfsTileRevealed(tile) || field.has(tile.key)) {
+                continue
+            }
+
+            field.set(tile.key, Infinity)
+        }
+
+        return field
+    }
+
+    resetBfsFields() {
+        if (!this.game) {
+            return null
+        }
+
+        this.game.bfsFields = {
+            enemy: this.createEmptyBfsField(),
+            colony: this.createEmptyBfsField(),
+            queen: this.createEmptyBfsField()
+        }
+
+        return this.game.bfsFields
+    }
+
+    addAdjacentPassableSeeds(tile, blockedKeys, seedKeys) {
+        if (!tile) {
+            return
+        }
+
+        for (const neighbor of tile.getNeighbors()) {
+            if (!this.isBfsTileRevealed(neighbor) || !neighbor?.creatureFits() || blockedKeys.has(neighbor.key)) {
+                continue
+            }
+            seedKeys.add(neighbor.key)
+        }
+    }
+
+    addBuildingFieldTargets(building, blockedKeys, seedKeys) {
+        if (!building || !Array.isArray(building.tileArray) || building.tileArray.length === 0) {
+            return
+        }
+
+        for (const tile of building.tileArray) {
+            if (!tile || tile.creatureFits()) {
+                continue
+            }
+
+            blockedKeys.add(tile.key)
+            this.addAdjacentPassableSeeds(tile, blockedKeys, seedKeys)
+        }
+    }
+
+    buildBfsFieldSnapshot(fieldName) {
+        const blockedKeys = new Set()
+        const seedKeys = new Set()
+
+        for (const tile of this.getTiles()) {
+            if (!this.isBfsTileRevealed(tile) || !tile?.creatureFits()) {
+                blockedKeys.add(tile.key)
+            }
+        }
+
+        if (fieldName === 'enemy') {
+            for (const creature of this.creatures) {
+                if (!isEnemyCreature(creature)) {
+                    continue
+                }
+
+                const tileKey = toKey(creature.location)
+                const tile = this.getTile(tileKey)
+                if (!tile) {
+                    continue
+                }
+
+                blockedKeys.add(tile.key)
+                this.addAdjacentPassableSeeds(tile, blockedKeys, seedKeys)
+            }
+        } else if (fieldName === 'colony') {
+            for (const creature of this.creatures) {
+                if (!isTrackedTrilobite(creature)) {
+                    continue
+                }
+
+                const tileKey = toKey(creature.location)
+                const tile = this.getTile(tileKey)
+                if (!tile) {
+                    continue
+                }
+
+                blockedKeys.add(tile.key)
+                this.addAdjacentPassableSeeds(tile, blockedKeys, seedKeys)
+            }
+
+            for (const building of this.buildings) {
+                this.addBuildingFieldTargets(building, blockedKeys, seedKeys)
+            }
+        } else if (fieldName === 'queen') {
+            this.addBuildingFieldTargets(this.getQueenBuilding(), blockedKeys, seedKeys)
+        }
+
+        return {
+            blockedKeys,
+            seedKeys
+        }
+    }
+
+    rebuildBfsField(fieldName) {
+        const snapshot = this.buildBfsFieldSnapshot(fieldName)
+        const field = this.createEmptyBfsField()
+        const queue = []
+        let queueHead = 0
+
+        for (const seedKey of snapshot.seedKeys) {
+            if (snapshot.blockedKeys.has(seedKey)) {
+                continue
+            }
+
+            field.set(seedKey, 0)
+            queue.push(seedKey)
+        }
+
+        while (queueHead < queue.length) {
+            const currentKey = queue[queueHead]
+            queueHead++
+
+            const currentTile = this.getTile(currentKey)
+            if (!currentTile) {
+                continue
+            }
+
+            const currentValue = field.get(currentKey) ?? Infinity
+            if (!Number.isFinite(currentValue)) {
+                continue
+            }
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (snapshot.blockedKeys.has(neighbor.key)) {
+                    continue
+                }
+
+                const nextValue = currentValue + 1
+                if (nextValue >= (field.get(neighbor.key) ?? Infinity)) {
+                    continue
+                }
+
+                field.set(neighbor.key, nextValue)
+                queue.push(neighbor.key)
+            }
+        }
+
+        this.game.bfsFields[fieldName] = field
+        return field
+    }
+
+    computeBfsFieldValue(tileKey, field, snapshot) {
+        const tile = this.getTile(tileKey)
+        if (!tile || snapshot.blockedKeys.has(tileKey)) {
+            return Infinity
+        }
+
+        if (snapshot.seedKeys.has(tileKey)) {
+            return 0
+        }
+
+        let bestNeighborValue = Infinity
+
+        for (const neighbor of tile.getNeighbors()) {
+            if (snapshot.blockedKeys.has(neighbor.key)) {
+                continue
+            }
+
+            const neighborValue = field.get(neighbor.key) ?? Infinity
+            if (neighborValue < bestNeighborValue) {
+                bestNeighborValue = neighborValue
+            }
+        }
+
+        if (!Number.isFinite(bestNeighborValue)) {
+            return Infinity
+        }
+
+        return bestNeighborValue + 1
+    }
+
+    rebalanceBfsField(fieldName, dirtyKeys = []) {
+        if (!Array.isArray(dirtyKeys) || dirtyKeys.length === 0) {
+            return this.rebuildBfsField(fieldName)
+        }
+
+        const field = this.syncBfsFieldCoverage(this.getBfsField(fieldName))
+        const snapshot = this.buildBfsFieldSnapshot(fieldName)
+        const queue = []
+        const queued = new Set()
+        let queueHead = 0
+
+        const enqueue = (tileKey) => {
+            if (typeof tileKey !== 'string' || queued.has(tileKey) || !this.getTile(tileKey)) {
+                return
+            }
+            queued.add(tileKey)
+            queue.push(tileKey)
+        }
+
+        for (const tileKey of dirtyKeys) {
+            enqueue(tileKey)
+            const tile = this.getTile(tileKey)
+            if (!tile) {
+                continue
+            }
+
+            for (const neighbor of tile.getNeighbors()) {
+                enqueue(neighbor.key)
+            }
+        }
+
+        while (queueHead < queue.length) {
+            const currentKey = queue[queueHead]
+            queueHead++
+            queued.delete(currentKey)
+
+            const currentValue = field.get(currentKey) ?? Infinity
+            const nextValue = this.computeBfsFieldValue(currentKey, field, snapshot)
+            if (Object.is(currentValue, nextValue)) {
+                continue
+            }
+
+            field.set(currentKey, nextValue)
+
+            const currentTile = this.getTile(currentKey)
+            if (!currentTile) {
+                continue
+            }
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                enqueue(neighbor.key)
+            }
+        }
+
+        return field
+    }
+
+    rebalanceAllBfsFields(dirtyKeys = []) {
+        for (const fieldName of this.getBfsFieldNames()) {
+            this.rebalanceBfsField(fieldName, dirtyKeys)
+        }
+
+        return this.game?.bfsFields ?? null
+    }
+
+    getBfsFieldValue(fieldName, location) {
+        const field = this.getBfsField(fieldName)
+        if (!field || !location) {
+            return Infinity
+        }
+
+        return field.get(toKey(location)) ?? Infinity
+    }
+
+    getBfsFieldNextStep(fieldName, location) {
+        const field = this.getBfsField(fieldName)
+        if (!field || !location) {
+            return null
+        }
+
+        const currentKey = toKey(location)
+        const currentTile = this.getTile(currentKey)
+        if (!currentTile) {
+            return null
+        }
+
+        const currentValue = field.get(currentKey) ?? Infinity
+        let bestNeighbor = null
+        let bestValue = currentValue
+
+        for (const neighbor of currentTile.getNeighbors()) {
+            if (!neighbor.creatureFits()) {
+                continue
+            }
+
+            const neighborValue = field.get(neighbor.key) ?? Infinity
+            if (!Number.isFinite(neighborValue) || neighborValue >= bestValue) {
+                continue
+            }
+
+            if (bestNeighbor === null || neighborValue < bestValue || (neighborValue === bestValue && neighbor.key < bestNeighbor.key)) {
+                bestNeighbor = neighbor
+                bestValue = neighborValue
+            }
+        }
+
+        return bestNeighbor ? toCoords(bestNeighbor.key) : null
+    }
+
     hasEnemies() {
         for (const creature of this.creatures) {
             if (isEnemyCreature(creature)) {
@@ -702,10 +1103,9 @@ export class Cave extends Graph {
 
         const tileSprite = tile.sprite
         creature.sprite.anchor.set(0.5)
-        creature.sprite.x = tileSprite.x
-        creature.sprite.y = tileSprite.y
-        creature.sprite.baseX = tileSprite.baseX
-        creature.sprite.baseY = tileSprite.baseY
+        if (!creature.placeSpriteOnTile(tileSprite)) {
+            return false
+        }
         creature.sprite.scale.set(this.game.currentScale)
         creature.sprite.interactive = true;
         creature.sprite.buttonMode = true;
@@ -719,6 +1119,8 @@ export class Cave extends Graph {
         if (isEnemyCreature(creature) && this.game.danger === false) {
             this.game.danger = true
         }
+
+        this.rebalanceAllBfsFields([tile.key])
 
         return true
     }
@@ -750,11 +1152,9 @@ export class Cave extends Graph {
         let moveX = current.x - next.x
         let moveY = current.y - next.y
 
-        creature.sprite.x = creature.sprite.x + (80 * creature.game.currentScale * -moveX)
-        creature.sprite.y = creature.sprite.y + (80 * creature.game.currentScale * -moveY)
-
-        creature.sprite.baseX = creature.sprite.baseX + (80 * -moveX)
-        creature.sprite.baseY = creature.sprite.baseY + (80 * -moveY)
+        if (!creature.placeSpriteOnTile(nextTile.sprite, { randomize: true })) {
+            return false
+        }
 
         if (moveX === 0) {
             if (-moveY === 1) {
