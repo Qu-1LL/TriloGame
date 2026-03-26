@@ -7,6 +7,9 @@ export class MiningPost extends Building {
         super('Mining Post', {x:3, y:3}, [[1,1,1],[1,0,1],[1,1,1]],game,true)
         this.sprite = PIXI.Sprite.from('Mining Post')
         this.description = `Units assigned to this post will mine ore and stone in a ${this.getRadius()}-block radius and store it here. Has a capacity of ${this.getCapacity()}.`
+        this.recipe = {
+            Sandstone: 20
+        }
 
         this.capacity = 1000
         this.radius = 10
@@ -15,6 +18,7 @@ export class MiningPost extends Building {
             this.inventory[ore.name] = 0
         }
         this.assignments = new Map()
+        this.materialReservations = new Map()
         this.mineableQueues = {}
         this.mineableQueueHeads = {}
         this.mineableTypes = []
@@ -32,6 +36,35 @@ export class MiningPost extends Building {
 
     getInventory() {
         return this.inventory
+    }
+
+    getMaterialReservation(creature) {
+        const reservation = this.materialReservations.get(creature)
+        return reservation ? { ...reservation } : null
+    }
+
+    getReservedAmount(resourceType, excludeCreature = null) {
+        if (typeof resourceType !== 'string') {
+            return 0
+        }
+
+        let reservedAmount = 0
+        for (const [creature, reservation] of this.materialReservations.entries()) {
+            if (creature === excludeCreature || reservation?.resourceType !== resourceType) {
+                continue
+            }
+            reservedAmount += reservation.amount ?? 0
+        }
+
+        return reservedAmount
+    }
+
+    getAvailableInventory(resourceType, excludeCreature = null) {
+        if (typeof resourceType !== 'string') {
+            return 0
+        }
+
+        return Math.max(0, (this.inventory[resourceType] ?? 0) - this.getReservedAmount(resourceType, excludeCreature))
     }
 
     getInventoryTotal() {
@@ -74,6 +107,66 @@ export class MiningPost extends Building {
         this.inventory[resourceType] -= taken
 
         return taken
+    }
+
+    reserveMaterial(creature, resourceType, amount) {
+        if (!creature || typeof resourceType !== 'string' || !Number.isFinite(amount) || amount <= 0) {
+            return 0
+        }
+
+        this.releaseMaterialReservation(creature)
+
+        const reserved = Math.min(amount, this.getAvailableInventory(resourceType, creature))
+        if (reserved <= 0) {
+            return 0
+        }
+
+        this.materialReservations.set(creature, {
+            resourceType,
+            amount: reserved
+        })
+
+        return reserved
+    }
+
+    releaseMaterialReservation(creature) {
+        const reservation = this.materialReservations.get(creature) ?? null
+        this.materialReservations.delete(creature)
+        return reservation
+    }
+
+    withdrawReservedMaterial(creature, amount = null) {
+        const reservation = this.materialReservations.get(creature)
+        if (!reservation) {
+            return null
+        }
+
+        const resourceType = reservation.resourceType
+        const requestedAmount = Number.isFinite(amount) && amount > 0
+            ? Math.min(amount, reservation.amount)
+            : reservation.amount
+        const taken = Math.min(requestedAmount, this.inventory[resourceType] ?? 0)
+
+        if (taken <= 0) {
+            if ((this.inventory[resourceType] ?? 0) <= 0 || reservation.amount <= 0) {
+                this.materialReservations.delete(creature)
+            }
+            return null
+        }
+
+        this.inventory[resourceType] -= taken
+        reservation.amount -= taken
+
+        if (reservation.amount <= 0) {
+            this.materialReservations.delete(creature)
+        } else {
+            this.materialReservations.set(creature, reservation)
+        }
+
+        return {
+            resourceType,
+            amount: taken
+        }
     }
 
     getAssignments () {

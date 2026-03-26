@@ -1,5 +1,8 @@
 import { Ore } from './ores.js'
 
+export const BUILD_TILE_SIZE = 80
+export const BUILD_TILE_HALF_SIZE = BUILD_TILE_SIZE / 2
+
 export function toKey(location) {
     return location.x + "," + location.y
 }
@@ -31,6 +34,63 @@ export function squaredDistance(a, b) {
     const dx = a.x - b.x
     const dy = a.y - b.y
     return (dx * dx) + (dy * dy)
+}
+
+export function cloneSize(size) {
+    return {
+        x: size?.x ?? 0,
+        y: size?.y ?? 0
+    }
+}
+
+export function cloneOpenMap(openMap) {
+    if (!Array.isArray(openMap)) {
+        return []
+    }
+
+    return openMap.map((row) => Array.isArray(row) ? [...row] : [])
+}
+
+export function normalizeRecipe(recipe) {
+    if (!recipe || typeof recipe !== 'object' || Array.isArray(recipe)) {
+        return null
+    }
+
+    const normalized = {}
+    for (const [resourceType, amount] of Object.entries(recipe)) {
+        if (typeof resourceType !== 'string' || resourceType.length === 0) {
+            continue
+        }
+
+        const normalizedAmount = Math.floor(Number(amount))
+        if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+            continue
+        }
+
+        normalized[resourceType] = normalizedAmount
+    }
+
+    return Object.keys(normalized).length > 0 ? normalized : null
+}
+
+export function destroyDisplayObject(displayObject) {
+    if (!displayObject) {
+        return false
+    }
+
+    if (displayObject.parent) {
+        displayObject.parent.removeChild(displayObject)
+    }
+
+    if (typeof displayObject.destroy === 'function') {
+        try {
+            displayObject.destroy({ children: true })
+        } catch (error) {
+            displayObject.destroy()
+        }
+    }
+
+    return true
 }
 
 export function isMineableType(tileType) {
@@ -70,8 +130,8 @@ export class Building {
 
     constructor (name,size,openMap,game,station) {
         this.name = name
-        this.size = size
-        this.openMap = openMap
+        this.size = cloneSize(size)
+        this.openMap = cloneOpenMap(openMap)
         this.game = game
         this.tileArray = new Array()
         this.description = ''
@@ -81,6 +141,11 @@ export class Building {
         this.health = 100
         this.maxHealth = this.health
         this.cave = null
+        this.bfsField = new Map()
+        this.updatedField = false
+        this.bfsFieldUpdatedTiles = new Set()
+        this.recipe = null
+        this.selectable = true
     }
 
     rotateMap() {
@@ -123,6 +188,45 @@ export class Building {
         return this.description
     }
 
+    getRecipe() {
+        return normalizeRecipe(this.recipe)
+    }
+
+    canBeSelected() {
+        return this.selectable !== false
+    }
+
+    getCenter() {
+        return {
+            x: this.location.x + Math.floor(this.size.x / 2),
+            y: this.location.y + Math.floor(this.size.y / 2)
+        }
+    }
+
+    markBfsFieldDirty(tileKeys = []) {
+        this.updatedField = false
+
+        if (!Array.isArray(tileKeys)) {
+            return this.updatedField
+        }
+
+        for (const tileKey of tileKeys) {
+            const normalizedTileKey = normalizeTileKey(tileKey)
+            if (normalizedTileKey === null) {
+                continue
+            }
+            this.bfsFieldUpdatedTiles.add(normalizedTileKey)
+        }
+
+        return this.updatedField
+    }
+
+    clearBfsFieldDirtyState() {
+        this.updatedField = true
+        this.bfsFieldUpdatedTiles.clear()
+        return this.updatedField
+    }
+
     getHealth() {
         return this.health
     }
@@ -163,13 +267,7 @@ export class Building {
 
         this.cleanupBeforeRemoval()
 
-        if (this.sprite?.parent) {
-            this.sprite.parent.removeChild(this.sprite)
-        }
-
-        if (typeof this.sprite?.destroy === 'function') {
-            this.sprite.destroy()
-        }
+        destroyDisplayObject(this.sprite)
 
         this.tileArray = []
         this.location = { x: null, y: null }

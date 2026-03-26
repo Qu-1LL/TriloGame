@@ -63,7 +63,7 @@ function logStatsSnapshot(game, tickCount) {
     console.log(formatStatsSnapshot(game.stats.getAll()))
 }
 
-function getRandomRevealedSpawnTile(cave) {
+function getRandomReachableSpawnTile(cave) {
     const occupiedTileKeys = new Set()
     for (const creature of cave.creatures) {
         if (Number.isFinite(creature?.location?.x) && Number.isFinite(creature?.location?.y)) {
@@ -71,16 +71,151 @@ function getRandomRevealedSpawnTile(cave) {
         }
     }
 
-    const revealedTiles = typeof cave.getRevealedTiles === 'function'
-        ? cave.getRevealedTiles().filter((tile) => tile?.creatureFits() && !occupiedTileKeys.has(tile.key))
-        : cave.getTiles().filter((tile) => tile?.sprite?.visible === true && tile.creatureFits() && !occupiedTileKeys.has(tile.key))
+    const reachableTiles = typeof cave.getReachableTiles === 'function'
+        ? cave.getReachableTiles().filter((tile) => tile?.creatureFits() && !occupiedTileKeys.has(tile.key))
+        : cave.getTiles().filter((tile) => tile?.creatureFits() && !occupiedTileKeys.has(tile.key))
 
-    if (revealedTiles.length === 0) {
+    if (reachableTiles.length === 0) {
         return null
     }
 
-    const randomIndex = Math.floor(Math.random() * revealedTiles.length)
-    return revealedTiles[randomIndex]
+    const randomIndex = Math.floor(Math.random() * reachableTiles.length)
+    return reachableTiles[randomIndex]
+}
+
+function getManhattanDistance(a, b) {
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+}
+
+function hasWallClearance(cave, building, location, minDistance) {
+    if (!cave || !building || !location || !Number.isFinite(minDistance) || minDistance <= 0) {
+        return true
+    }
+
+    for (let x = 0; x < building.size.x; x++) {
+        for (let y = 0; y < building.size.y; y++) {
+            if (building.openMap[y][x] > 1) {
+                continue
+            }
+
+            const tileLocation = {
+                x: location.x + x,
+                y: location.y + y
+            }
+
+            for (let dx = -(minDistance - 1); dx <= (minDistance - 1); dx++) {
+                for (let dy = -(minDistance - 1); dy <= (minDistance - 1); dy++) {
+                    if ((Math.abs(dx) + Math.abs(dy)) >= minDistance) {
+                        continue
+                    }
+
+                    const nearbyTile = cave.getTile(`${tileLocation.x + dx},${tileLocation.y + dy}`)
+                    if (!nearbyTile || nearbyTile.getBase() === 'wall') {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+
+    return true
+}
+
+function findStarterMiningPostLocation(cave, building, minWallDistance = 5, maxQueenDistance = 10) {
+    if (!cave || !building) {
+        return null
+    }
+
+    const queenBuilding = typeof cave.getQueenBuilding === 'function' ? cave.getQueenBuilding() : null
+    const queenCenter = typeof queenBuilding?.getCenter === 'function'
+        ? queenBuilding.getCenter()
+        : { x: 0, y: 0 }
+
+    let bestLocation = null
+    let bestDistance = Infinity
+
+    for (const tile of cave.getTiles()) {
+        const location = toCoords(tile.key)
+        if (!cave.canBuild(building, location)) {
+            continue
+        }
+
+        if (!hasWallClearance(cave, building, location, minWallDistance)) {
+            continue
+        }
+
+        const buildingCenter = {
+            x: location.x + Math.floor(building.size.x / 2),
+            y: location.y + Math.floor(building.size.y / 2)
+        }
+        const distance = getManhattanDistance(buildingCenter, queenCenter)
+        if (Number.isFinite(maxQueenDistance) && maxQueenDistance >= 0 && distance > maxQueenDistance) {
+            continue
+        }
+
+        if (distance < bestDistance) {
+            bestDistance = distance
+            bestLocation = location
+        }
+    }
+
+    return bestLocation
+}
+
+function getRandomInitialQueenLocation() {
+    return {
+        x: Math.floor((Math.random() * 20) - 10),
+        y: Math.floor((Math.random() * 20) - 10)
+    }
+}
+
+function buildInitialColony(cave, game) {
+    const starterWallDistance = 5
+    const starterQueenDistance = 10
+    const randomAttempts = 200
+
+    for (let attempt = 0; attempt < randomAttempts; attempt++) {
+        const queenLocation = getRandomInitialQueenLocation()
+        const queen = new Queen(game)
+        if (!cave.build(queen, queenLocation, queen.sprite)) {
+            continue
+        }
+
+        const miningPost = new MiningPost(game)
+        const miningPostLocation = findStarterMiningPostLocation(cave, miningPost, starterWallDistance, starterQueenDistance)
+        if (miningPostLocation && cave.build(miningPost, miningPostLocation, miningPost.sprite)) {
+            return {
+                queenLocation,
+                miningPostLocation
+            }
+        }
+
+        cave.removeBuilding(queen, 'initialPlacementRetry')
+    }
+
+    const candidateQueenLocations = cave.getTiles()
+        .map((tile) => toCoords(tile.key))
+        .sort((a, b) => getManhattanDistance(a, { x: 0, y: 0 }) - getManhattanDistance(b, { x: 0, y: 0 }))
+
+    for (const queenLocation of candidateQueenLocations) {
+        const queen = new Queen(game)
+        if (!cave.build(queen, queenLocation, queen.sprite)) {
+            continue
+        }
+
+        const miningPost = new MiningPost(game)
+        const miningPostLocation = findStarterMiningPostLocation(cave, miningPost, starterWallDistance, starterQueenDistance)
+        if (miningPostLocation && cave.build(miningPost, miningPostLocation, miningPost.sprite)) {
+            return {
+                queenLocation,
+                miningPostLocation
+            }
+        }
+
+        cave.removeBuilding(queen, 'initialPlacementRetry')
+    }
+
+    throw new Error('Failed to place the initial queen and starter mining post.')
 }
 
 async function setup()
@@ -158,9 +293,9 @@ async function preload()
     let debugEnemyCount = 1
 
     const spawnDebugEnemy = () => {
-        const spawnTile = getRandomRevealedSpawnTile(cave)
+        const spawnTile = getRandomReachableSpawnTile(cave)
         if (!spawnTile) {
-            console.log('No revealed passable tile is available for debug enemy spawn.')
+            console.log('No reachable passable tile is available for debug enemy spawn.')
             return false
         }
 
@@ -224,14 +359,9 @@ async function preload()
     }
     tickLoop()
     
-    var queen = new Queen()
-    var spawnX = Math.floor((Math.random() * 20) - 10)
-    var spawnY = Math.floor((Math.random() * 20) - 10)
-
-    while(!cave.build(queen,{x:spawnX,y:spawnY},queen.sprite)) {
-        spawnX = Math.floor((Math.random() * 20) - 10)
-        spawnY = Math.floor((Math.random() * 20) - 10)
-    }
+    const initialColony = buildInitialColony(cave, game)
+    const spawnX = initialColony.queenLocation.x
+    const spawnY = initialColony.queenLocation.y
 
     let trilo = new Trilobite('Jeffery',{x:spawnX+2,y:spawnY},game)
     cave.spawn(trilo,cave.getTile((spawnX+2)+','+spawnY))
@@ -331,11 +461,7 @@ async function preload()
 
         }
         if (game.buildMode) {
-            game.floatingBuilding.sprite.x = pos.x
-            game.floatingBuilding.sprite.y = pos.y
-            game.floatingBuilding.sprite.baseX = ((pos.x - game.floatingBuilding.sprite.position.baseX) * (1 / game.currentScale))
-            game.floatingBuilding.sprite.baseY = ((pos.y - game.floatingBuilding.sprite.position.baseY) * (1 / game.currentScale))
-            // console.log(game.floatingBuilding.sprite.position.x+","+game.floatingBuilding.sprite.position.y)
+            game.updateFloatingBuildingPosition(pos)
         }
     });
 
@@ -405,22 +531,7 @@ async function preload()
             game.cleanActive()
         } else if (e.key === 'r') {
             if (game.buildMode) {
-                game.floatingBuilding.sprite.rotation += Math.PI / 2
-                game.floatingBuilding.building.rotateMap()
-
-                if (game.floatingBuilding.rotation == 0) {
-                    game.floatingBuilding.rotation++
-                    game.floatingBuilding.sprite.anchor.set(1 / (game.floatingBuilding.building.size.x * 2), ((game.floatingBuilding.building.size.y * 2) - 1) / (game.floatingBuilding.building.size.y * 2))
-                } else if (game.floatingBuilding.rotation == 1) {
-                    game.floatingBuilding.rotation++
-                    game.floatingBuilding.sprite.anchor.set((((game.floatingBuilding.building.size.x * 2) - 1) / (game.floatingBuilding.building.size.x * 2)), (((game.floatingBuilding.building.size.y * 2) - 1) / (game.floatingBuilding.building.size.y * 2)))
-                } else if (game.floatingBuilding.rotation == 2) {
-                    game.floatingBuilding.rotation++
-                    game.floatingBuilding.sprite.anchor.set((((game.floatingBuilding.building.size.x * 2) - 1) / (game.floatingBuilding.building.size.x * 2)), (1 / (game.floatingBuilding.building.size.y * 2)))
-                } else if (game.floatingBuilding.rotation == 3) {
-                    game.floatingBuilding.rotation = 0
-                    game.floatingBuilding.sprite.anchor.set((1 / (game.floatingBuilding.building.size.x * 2)), (1 / (game.floatingBuilding.building.size.y * 2)))
-                }
+                game.rotateFloatingBuilding()
             }
         }
     })

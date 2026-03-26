@@ -6,6 +6,9 @@ export class Storage extends Building {
     constructor (game) {
         super("Storage",{x:2,y:2},[[0,0],[0,0]],game,false)
         this.sprite = PIXI.Sprite.from('Storage')
+        this.recipe = {
+            Sandstone: 20
+        }
 
         this.capacity = 20
 

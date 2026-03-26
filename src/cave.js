@@ -2,6 +2,7 @@
 import * as PIXI from 'pixi.js'
 import {Graph, Tile } from './graph-data.js'
 import { Ore } from './ores.js'
+import { BUILD_TILE_HALF_SIZE, destroyDisplayObject } from './building.js'
 
 import { Game } from './game.js'
 
@@ -60,6 +61,7 @@ export class Cave extends Graph {
         this.creatures = new Set();
         this.buildings = new Set();
         this.revealedTiles = new Set();
+        this.reachableTiles = new Set();
         this.app = app
         this.game = game
         this.resetBfsFields()
@@ -298,8 +300,15 @@ export class Cave extends Graph {
     }
 
     canBuild(building,location) {
+        const hasQueen = this.getQueenBuilding() !== null
+        const buildingIsQueen = building?.name === 'Queen' || building?.constructor?.name === 'Queen'
+        const requireReachableTiles = hasQueen && !buildingIsQueen
+
         for(let x = 0; x < building.size.x; x++) {
             for (let y = 0; y < building.size.y; y++) {
+                if (building.openMap[y][x] > 1) {
+                    continue
+                }
                 let theseCoords = (location.x + x) + "," + (location.y + y)
                 let curTile = this.tiles.get(theseCoords)
                 if (curTile === undefined) {
@@ -308,17 +317,28 @@ export class Cave extends Graph {
                 if (curTile.getBuilt() || curTile.getBase() !== 'empty' || !curTile.creatureFits()) {
                     return false
                 }
+                if (requireReachableTiles && !this.isTileReachable(curTile)) {
+                    return false
+                }
             }
         }
         return true
     }
 
-    build(building,location,sprite) {
+    build(building,location,sprite = null) {
         if (!this.canBuild(building,location)) {
             return false
         }
+
+        const displayObject = sprite ?? building?.sprite
+        if (!displayObject) {
+            return false
+        }
+
         this.buildings.add(building)
+        building.sprite = displayObject
         building.cave = this
+        building.tileArray = []
         building.setLocation(location.x,location.y)
 
         for(let x = 0; x < building.size.x; x++) {
@@ -338,20 +358,27 @@ export class Cave extends Graph {
             building.onBuilt(this)
         }
 
+        const dirtyKeys = building.tileArray.map((tile) => tile.key)
+        const reachabilityResult = this.refreshReachableTiles()
+        this.markAllBuildingFieldsDirty([...dirtyKeys, ...reachabilityResult.changedKeys])
+
         let tileSprite = this.getTile(location.x+","+location.y).sprite
 
-        sprite.x = tileSprite.x + ((building.size.x - 1) * (40 * this.game.currentScale))
-        sprite.y = tileSprite.y + ((building.size.y - 1) * (40 * this.game.currentScale))
-        sprite.baseX = tileSprite.baseX + ((building.size.x - 1) * 40)
-        sprite.baseY = tileSprite.baseY + ((building.size.y - 1) * 40)
-        this.game.tileContainer.addChild(sprite)
-        sprite.anchor.set(0.5)
-        sprite.scale.set(this.game.currentScale)
-        sprite.interactive = true;
-        sprite.buttonMode = true;
-        sprite.zIndex = 1
+        displayObject.x = tileSprite.x + ((building.size.x - 1) * (BUILD_TILE_HALF_SIZE * this.game.currentScale))
+        displayObject.y = tileSprite.y + ((building.size.y - 1) * (BUILD_TILE_HALF_SIZE * this.game.currentScale))
+        displayObject.baseX = tileSprite.baseX + ((building.size.x - 1) * BUILD_TILE_HALF_SIZE)
+        displayObject.baseY = tileSprite.baseY + ((building.size.y - 1) * BUILD_TILE_HALF_SIZE)
+        if (typeof this.game.setPlacedBuildingDisplayPivot === 'function') {
+            this.game.setPlacedBuildingDisplayPivot(building)
+        } else if (typeof displayObject.pivot?.set === 'function') {
+            displayObject.pivot.set(building.size.x * BUILD_TILE_HALF_SIZE, building.size.y * BUILD_TILE_HALF_SIZE)
+        }
+        displayObject.scale.set(this.game.currentScale)
+        displayObject.interactive = true;
+        displayObject.buttonMode = true;
+        displayObject.zIndex = 1
 
-        sprite.on('pointermove', (event) => {
+        displayObject.on('pointermove', (event) => {
             let pos = event.data.global;
 
             for (let tile of building.tileArray) {
@@ -363,7 +390,7 @@ export class Cave extends Graph {
             }
         });
 
-        sprite.on('mouseup', (event) => {
+        displayObject.on('mouseup', (event) => {
             if (this.game.dragging) {
                 return;
             }
@@ -380,12 +407,16 @@ export class Cave extends Graph {
                 }
             }
 
-            if (this.game.selected.object == null && !carryModes) {
+            if (
+                this.game.selected.object == null &&
+                !carryModes &&
+                (typeof building.canBeSelected !== 'function' || building.canBeSelected())
+            ) {
                 this.game.selected.setSelected(building)
             }
         });
 
-        sprite.on('pointerout', (event) => {
+        displayObject.on('pointerout', (event) => {
             let pos = event.data.global;
 
             for (let tile of building.tileArray) {
@@ -397,7 +428,7 @@ export class Cave extends Graph {
             }
         });
 
-        this.game.tileContainer.addChild(sprite)
+        this.game.tileContainer.addChild(displayObject)
         this.rebalanceAllBfsFields(building.tileArray.map((tile) => tile.key))
 
         return true
@@ -425,21 +456,42 @@ export class Cave extends Graph {
 
         this.buildings.delete(building)
 
+        for (const creature of this.creatures) {
+            if (!creature) {
+                continue
+            }
+
+            const assignedBuilding = typeof creature.getAssignedBuilding === 'function'
+                ? creature.getAssignedBuilding()
+                : creature.assignedBuilding
+
+            if (assignedBuilding !== building) {
+                continue
+            }
+
+            if (typeof creature.clearActionQueue === 'function') {
+                creature.clearActionQueue()
+            }
+
+            if (typeof creature.releaseAssignedBuilding === 'function') {
+                creature.releaseAssignedBuilding()
+            } else if ('assignedBuilding' in creature) {
+                creature.assignedBuilding = null
+            }
+        }
+
         if (typeof building.cleanupBeforeRemoval === 'function') {
             building.cleanupBeforeRemoval(source)
         }
+
+        const reachabilityResult = this.refreshReachableTiles()
+        this.markAllBuildingFieldsDirty([...dirtyKeys, ...reachabilityResult.changedKeys])
 
         if (this.game?.selected?.object === building && typeof this.game.cleanActive === 'function') {
             this.game.cleanActive()
         }
 
-        if (building.sprite?.parent) {
-            building.sprite.parent.removeChild(building.sprite)
-        }
-
-        if (typeof building.sprite?.destroy === 'function') {
-            building.sprite.destroy()
-        }
+        destroyDisplayObject(building.sprite)
 
         building.tileArray = []
         building.location = { x: null, y: null }
@@ -469,6 +521,552 @@ export class Cave extends Graph {
 
     getRevealedTiles() {
         return [...this.revealedTiles]
+    }
+
+    isTileReachable(tile) {
+        return this.reachableTiles.has(tile)
+    }
+
+    getReachableTiles() {
+        return [...this.reachableTiles]
+    }
+
+    getReachabilityChangedKeys(previousReachableTiles, nextReachableTiles) {
+        const changedKeys = new Set()
+
+        for (const tile of previousReachableTiles) {
+            if (!nextReachableTiles.has(tile)) {
+                changedKeys.add(tile.key)
+            }
+        }
+
+        for (const tile of nextReachableTiles) {
+            if (!previousReachableTiles.has(tile)) {
+                changedKeys.add(tile.key)
+            }
+        }
+
+        return [...changedKeys]
+    }
+
+    refreshReachableTiles() {
+        const previousReachableTiles = this.reachableTiles
+        const queenBuilding = this.getQueenBuilding()
+        const nextReachableTiles = new Set()
+
+        if (!queenBuilding || !Array.isArray(queenBuilding.tileArray) || queenBuilding.tileArray.length === 0) {
+            this.reachableTiles = nextReachableTiles
+            return {
+                count: 0,
+                changedKeys: this.getReachabilityChangedKeys(previousReachableTiles, nextReachableTiles)
+            }
+        }
+
+        const queue = []
+        const visited = new Set()
+
+        for (const tile of queenBuilding.tileArray) {
+            if (!tile?.creatureFits() || visited.has(tile.key)) {
+                continue
+            }
+
+            visited.add(tile.key)
+            queue.push(tile)
+        }
+
+        let queueHead = 0
+
+        while (queueHead < queue.length) {
+            const currentTile = queue[queueHead]
+            queueHead++
+
+            if (!currentTile?.creatureFits()) {
+                continue
+            }
+
+            nextReachableTiles.add(currentTile)
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (!neighbor?.creatureFits() || visited.has(neighbor.key)) {
+                    continue
+                }
+
+                visited.add(neighbor.key)
+                queue.push(neighbor)
+            }
+        }
+
+        this.reachableTiles = nextReachableTiles
+        return {
+            count: this.reachableTiles.size,
+            changedKeys: this.getReachabilityChangedKeys(previousReachableTiles, nextReachableTiles)
+        }
+    }
+
+    isTileWithinBuildingBfsRadius(building, tileOrKey) {
+        if (!building || tileOrKey === null || tileOrKey === undefined) {
+            return false
+        }
+
+        const tileKey = typeof tileOrKey === 'string'
+            ? tileOrKey
+            : (typeof tileOrKey?.key === 'string' ? tileOrKey.key : null)
+
+        if (typeof tileKey === 'string') {
+            return this.getTile(tileKey) !== undefined
+        }
+
+        return Number.isFinite(tileOrKey?.x) && Number.isFinite(tileOrKey?.y)
+    }
+
+    isTileInBuildingBfsCoverage(building, tileOrKey) {
+        if (!building) {
+            return false
+        }
+
+        const tileKey = typeof tileOrKey === 'string'
+            ? tileOrKey
+            : (typeof tileOrKey?.key === 'string' ? tileOrKey.key : null)
+        const tile = tileKey ? this.getTile(tileKey) : tileOrKey
+
+        if (!tile || !this.isTileReachable(tile)) {
+            return false
+        }
+
+        return this.isTileWithinBuildingBfsRadius(building, tile)
+    }
+
+    doesTileAffectBuildingBfsField(building, tileKey) {
+        if (!building || typeof tileKey !== 'string') {
+            return false
+        }
+
+        if (!Number.isFinite(building.location?.x) || !Number.isFinite(building.location?.y)) {
+            return false
+        }
+
+        return this.getTile(tileKey) !== undefined
+    }
+
+    markAllBuildingFieldsDirty(tileKeys = []) {
+        const keys = Array.isArray(tileKeys) ? tileKeys : []
+
+        for (const building of this.buildings) {
+            if (!building || typeof building.markBfsFieldDirty !== 'function') {
+                continue
+            }
+
+            if (keys.length === 0) {
+                building.markBfsFieldDirty()
+                continue
+            }
+
+            const relevantKeys = []
+            for (const tileKey of keys) {
+                if (this.doesTileAffectBuildingBfsField(building, tileKey)) {
+                    relevantKeys.push(tileKey)
+                }
+            }
+
+            if (relevantKeys.length > 0) {
+                building.markBfsFieldDirty(relevantKeys)
+            }
+        }
+    }
+
+    getBuildingBfsSeedKeys(building) {
+        const seedKeys = new Set()
+        if (!building || !Array.isArray(building.tileArray) || building.tileArray.length === 0) {
+            return seedKeys
+        }
+
+        for (const tile of building.tileArray) {
+            if (!tile?.creatureFits() || !this.isTileInBuildingBfsCoverage(building, tile)) {
+                continue
+            }
+
+            seedKeys.add(tile.key)
+        }
+
+        if (seedKeys.size > 0) {
+            return seedKeys
+        }
+
+        for (const tile of building.tileArray) {
+            if (!tile) {
+                continue
+            }
+
+            for (const neighbor of tile.getNeighbors()) {
+                if (!neighbor?.creatureFits() || !this.isTileInBuildingBfsCoverage(building, neighbor)) {
+                    continue
+                }
+
+                seedKeys.add(neighbor.key)
+            }
+        }
+
+        return seedKeys
+    }
+
+    syncBuildingBfsFieldCoverage(building, field) {
+        if (!building || !(field instanceof Map)) {
+            return null
+        }
+
+        for (const tileKey of [...field.keys()]) {
+            if (this.isTileInBuildingBfsCoverage(building, tileKey)) {
+                continue
+            }
+
+            field.delete(tileKey)
+        }
+
+        for (const tile of this.getReachableTiles()) {
+            if (!this.isTileInBuildingBfsCoverage(building, tile) || field.has(tile.key)) {
+                continue
+            }
+
+            field.set(tile.key, Infinity)
+        }
+
+        return field
+    }
+
+    buildBuildingBfsFieldSnapshot(building) {
+        const blockedKeys = new Set()
+        const seedKeys = this.getBuildingBfsSeedKeys(building)
+
+        for (const tile of this.getReachableTiles()) {
+            if (!this.isTileInBuildingBfsCoverage(building, tile)) {
+                continue
+            }
+
+            if (!tile.creatureFits()) {
+                blockedKeys.add(tile.key)
+            }
+        }
+
+        return {
+            blockedKeys,
+            seedKeys
+        }
+    }
+
+    rebuildBuildingBfsField(building) {
+        if (!building) {
+            return null
+        }
+
+        const snapshot = this.buildBuildingBfsFieldSnapshot(building)
+        const field = new Map()
+        const queue = []
+        let queueHead = 0
+
+        for (const tile of this.getReachableTiles()) {
+            if (!this.isTileInBuildingBfsCoverage(building, tile)) {
+                continue
+            }
+
+            field.set(tile.key, Infinity)
+        }
+
+        for (const seedKey of snapshot.seedKeys) {
+            if (snapshot.blockedKeys.has(seedKey)) {
+                continue
+            }
+
+            field.set(seedKey, 0)
+            queue.push(seedKey)
+        }
+
+        while (queueHead < queue.length) {
+            const currentKey = queue[queueHead]
+            queueHead++
+
+            const currentTile = this.getTile(currentKey)
+            if (!currentTile) {
+                continue
+            }
+
+            const currentValue = field.get(currentKey) ?? Infinity
+            if (!Number.isFinite(currentValue)) {
+                continue
+            }
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (!this.isTileInBuildingBfsCoverage(building, neighbor) || snapshot.blockedKeys.has(neighbor.key)) {
+                    continue
+                }
+
+                const nextValue = currentValue + 1
+                if (nextValue >= (field.get(neighbor.key) ?? Infinity)) {
+                    continue
+                }
+
+                field.set(neighbor.key, nextValue)
+                queue.push(neighbor.key)
+            }
+        }
+
+        building.bfsField = field
+        building.clearBfsFieldDirtyState()
+        return field
+    }
+
+    computeBuildingBfsFieldValue(building, tileKey, field, snapshot) {
+        const tile = this.getTile(tileKey)
+        if (!tile || !this.isTileInBuildingBfsCoverage(building, tile) || snapshot.blockedKeys.has(tileKey)) {
+            return Infinity
+        }
+
+        if (snapshot.seedKeys.has(tileKey)) {
+            return 0
+        }
+
+        let bestNeighborValue = Infinity
+
+        for (const neighbor of tile.getNeighbors()) {
+            if (!this.isTileInBuildingBfsCoverage(building, neighbor) || snapshot.blockedKeys.has(neighbor.key)) {
+                continue
+            }
+
+            const neighborValue = field.get(neighbor.key) ?? Infinity
+            if (neighborValue < bestNeighborValue) {
+                bestNeighborValue = neighborValue
+            }
+        }
+
+        if (!Number.isFinite(bestNeighborValue)) {
+            return Infinity
+        }
+
+        return bestNeighborValue + 1
+    }
+
+    rebalanceBuildingBfsField(building, dirtyKeys = []) {
+        if (!building) {
+            return null
+        }
+
+        if (!(building.bfsField instanceof Map) || building.bfsField.size === 0 || !Array.isArray(dirtyKeys) || dirtyKeys.length === 0) {
+            return this.rebuildBuildingBfsField(building)
+        }
+
+        const field = this.syncBuildingBfsFieldCoverage(building, building.bfsField)
+        const snapshot = this.buildBuildingBfsFieldSnapshot(building)
+        const queue = []
+        const queued = new Set()
+        let queueHead = 0
+
+        const enqueue = (tileKey) => {
+            if (typeof tileKey !== 'string' || queued.has(tileKey)) {
+                return
+            }
+
+            const tile = this.getTile(tileKey)
+            if (!tile || !this.isTileWithinBuildingBfsRadius(building, tile)) {
+                return
+            }
+
+            queued.add(tileKey)
+            queue.push(tileKey)
+        }
+
+        for (const tileKey of dirtyKeys) {
+            enqueue(tileKey)
+            const tile = this.getTile(tileKey)
+            if (!tile) {
+                continue
+            }
+
+            for (const neighbor of tile.getNeighbors()) {
+                enqueue(neighbor.key)
+            }
+        }
+
+        while (queueHead < queue.length) {
+            const currentKey = queue[queueHead]
+            queueHead++
+            queued.delete(currentKey)
+
+            const currentValue = field.get(currentKey) ?? Infinity
+            const nextValue = this.computeBuildingBfsFieldValue(building, currentKey, field, snapshot)
+            if (Object.is(currentValue, nextValue)) {
+                continue
+            }
+
+            field.set(currentKey, nextValue)
+
+            const currentTile = this.getTile(currentKey)
+            if (!currentTile) {
+                continue
+            }
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                enqueue(neighbor.key)
+            }
+        }
+
+        building.bfsField = field
+        building.clearBfsFieldDirtyState()
+        return field
+    }
+
+    ensureBuildingBfsField(building) {
+        if (!building) {
+            return null
+        }
+
+        if (!(building.bfsField instanceof Map) || building.bfsField.size === 0) {
+            return this.rebuildBuildingBfsField(building)
+        }
+
+        if (building.updatedField === true) {
+            return building.bfsField
+        }
+
+        const dirtyKeys = [...building.bfsFieldUpdatedTiles]
+        if (dirtyKeys.length === 0) {
+            return this.rebuildBuildingBfsField(building)
+        }
+
+        return this.rebalanceBuildingBfsField(building, dirtyKeys)
+    }
+
+    getFieldNextStep(field, location) {
+        if (!(field instanceof Map) || !location) {
+            return null
+        }
+
+        const currentKey = toKey(location)
+        const currentTile = this.getTile(currentKey)
+        if (!currentTile) {
+            return null
+        }
+
+        const currentValue = field.get(currentKey) ?? Infinity
+        let bestNeighbor = null
+        let bestValue = currentValue
+
+        for (const neighbor of currentTile.getNeighbors()) {
+            if (!neighbor.creatureFits()) {
+                continue
+            }
+
+            const neighborValue = field.get(neighbor.key) ?? Infinity
+            if (!Number.isFinite(neighborValue) || neighborValue >= bestValue) {
+                continue
+            }
+
+            if (bestNeighbor === null || neighborValue < bestValue || (neighborValue === bestValue && neighbor.key < bestNeighbor.key)) {
+                bestNeighbor = neighbor
+                bestValue = neighborValue
+            }
+        }
+
+        return bestNeighbor ? toCoords(bestNeighbor.key) : null
+    }
+
+    buildPathFromField(field, startLocation) {
+        if (!(field instanceof Map) || !startLocation) {
+            return null
+        }
+
+        const startKey = toKey(startLocation)
+        const startValue = field.get(startKey) ?? Infinity
+        if (!Number.isFinite(startValue)) {
+            return null
+        }
+
+        const path = [{ x: startLocation.x, y: startLocation.y, type: 'move' }]
+        let currentLocation = { x: startLocation.x, y: startLocation.y }
+        let currentValue = startValue
+        let timeCount = 0
+
+        while (currentValue > 0 && timeCount < 7850) {
+            const nextLocation = this.getFieldNextStep(field, currentLocation)
+            if (!nextLocation) {
+                return null
+            }
+
+            path.push({ x: nextLocation.x, y: nextLocation.y, type: 'move' })
+            currentLocation = nextLocation
+            currentValue = field.get(toKey(currentLocation)) ?? Infinity
+            timeCount++
+        }
+
+        if (currentValue !== 0) {
+            return null
+        }
+
+        return path
+    }
+
+    buildPointBfsField(destination) {
+        const destinationKey = toKey(destination)
+        const destinationTile = this.getTile(destinationKey)
+        if (!destinationTile || !destinationTile.creatureFits() || !this.isTileReachable(destinationTile)) {
+            return null
+        }
+
+        const field = new Map()
+        const queue = [destinationKey]
+        let queueHead = 0
+
+        for (const tile of this.getReachableTiles()) {
+            if (!tile.creatureFits()) {
+                continue
+            }
+            field.set(tile.key, Infinity)
+        }
+
+        field.set(destinationKey, 0)
+
+        while (queueHead < queue.length) {
+            const currentKey = queue[queueHead]
+            queueHead++
+
+            const currentTile = this.getTile(currentKey)
+            if (!currentTile) {
+                continue
+            }
+
+            const currentValue = field.get(currentKey) ?? Infinity
+            if (!Number.isFinite(currentValue)) {
+                continue
+            }
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (!neighbor.creatureFits() || !this.isTileReachable(neighbor)) {
+                    continue
+                }
+
+                const nextValue = currentValue + 1
+                if (nextValue >= (field.get(neighbor.key) ?? Infinity)) {
+                    continue
+                }
+
+                field.set(neighbor.key, nextValue)
+                queue.push(neighbor.key)
+            }
+        }
+
+        return field
+    }
+
+    getBuildingBfsFieldValue(building, location) {
+        const field = this.ensureBuildingBfsField(building)
+        if (!(field instanceof Map) || !location) {
+            return Infinity
+        }
+
+        return field.get(toKey(location)) ?? Infinity
+    }
+
+    getBuildingBfsFieldNextStep(building, location) {
+        const field = this.ensureBuildingBfsField(building)
+        return this.getFieldNextStep(field, location)
     }
 
     revealTile(tile, revealedKeys = null) {
@@ -689,7 +1287,7 @@ export class Cave extends Graph {
     }
 
     getBfsFieldNames() {
-        return ['enemy', 'colony', 'queen']
+        return ['enemy', 'colony']
     }
 
     isBfsTileRevealed(tile) {
@@ -708,6 +1306,11 @@ export class Cave extends Graph {
     }
 
     getBfsField(fieldName) {
+        if (fieldName === 'queen') {
+            const queenBuilding = this.getQueenBuilding()
+            return queenBuilding ? this.ensureBuildingBfsField(queenBuilding) : null
+        }
+
         if (!this.game?.bfsFields || typeof fieldName !== 'string') {
             return null
         }
@@ -749,8 +1352,7 @@ export class Cave extends Graph {
 
         this.game.bfsFields = {
             enemy: this.createEmptyBfsField(),
-            colony: this.createEmptyBfsField(),
-            queen: this.createEmptyBfsField()
+            colony: this.createEmptyBfsField()
         }
 
         return this.game.bfsFields
@@ -847,6 +1449,11 @@ export class Cave extends Graph {
     }
 
     rebuildBfsField(fieldName) {
+        if (fieldName === 'queen') {
+            const queenBuilding = this.getQueenBuilding()
+            return queenBuilding ? this.rebuildBuildingBfsField(queenBuilding) : null
+        }
+
         const snapshot = this.buildBfsFieldSnapshot(fieldName)
         const field = this.createEmptyBfsField()
         const queue = []
@@ -925,6 +1532,11 @@ export class Cave extends Graph {
     }
 
     rebalanceBfsField(fieldName, dirtyKeys = []) {
+        if (fieldName === 'queen') {
+            const queenBuilding = this.getQueenBuilding()
+            return queenBuilding ? this.rebalanceBuildingBfsField(queenBuilding, dirtyKeys) : null
+        }
+
         if (!Array.isArray(dirtyKeys) || dirtyKeys.length === 0) {
             return this.rebuildBfsField(fieldName)
         }
@@ -1000,37 +1612,7 @@ export class Cave extends Graph {
 
     getBfsFieldNextStep(fieldName, location) {
         const field = this.getBfsField(fieldName)
-        if (!field || !location) {
-            return null
-        }
-
-        const currentKey = toKey(location)
-        const currentTile = this.getTile(currentKey)
-        if (!currentTile) {
-            return null
-        }
-
-        const currentValue = field.get(currentKey) ?? Infinity
-        let bestNeighbor = null
-        let bestValue = currentValue
-
-        for (const neighbor of currentTile.getNeighbors()) {
-            if (!neighbor.creatureFits()) {
-                continue
-            }
-
-            const neighborValue = field.get(neighbor.key) ?? Infinity
-            if (!Number.isFinite(neighborValue) || neighborValue >= bestValue) {
-                continue
-            }
-
-            if (bestNeighbor === null || neighborValue < bestValue || (neighborValue === bestValue && neighbor.key < bestNeighbor.key)) {
-                bestNeighbor = neighbor
-                bestValue = neighborValue
-            }
-        }
-
-        return bestNeighbor ? toCoords(bestNeighbor.key) : null
+        return this.getFieldNextStep(field, location)
     }
 
     hasEnemies() {
@@ -1124,7 +1706,7 @@ export class Cave extends Graph {
             return false
         }
 
-        if (tile.getBase() == 'wall' || !tile.creatureFits()) {
+        if (tile.getBase() == 'wall' || !tile.creatureFits() || !this.isTileReachable(tile)) {
             return false
         }
 
@@ -1205,48 +1787,6 @@ export class Cave extends Graph {
         creature.location = { x: next.x, y: next.y }
         this.syncTrilobiteTileOccupancy(creature, currentTile, nextTile)
         return creature.location
-    }
-
-    bfsPath(startKey, goalKey) {
-
-        const queue = [startKey];
-        let queueHead = 0
-        const visited = new Set([startKey]);
-        const cameFrom = new Map();
-
-        let timeCount = 0
-
-        while (queueHead < queue.length && timeCount < 7850) {
-
-            const currentKey = queue[queueHead];
-            queueHead++;
-
-            if (currentKey === goalKey) {
-                let path = [];
-                let k = goalKey;
-                while (k !== undefined) {
-                    path.push(toCoords(k));
-                    path[path.length - 1]["type"] = "move";
-                    k = cameFrom.get(k);
-                }
-                path.reverse();
-                return path
-            }
-
-            for (let n of this.getTile(currentKey).getNeighbors()) {
-
-                if (!visited.has(n.key)) {
-                    timeCount++
-                    if (n.creatureFits()) {
-                        queue.push(n.key);
-                        visited.add(n.key);
-                        cameFrom.set(n.key, currentKey);
-                    }
-                }
-            }
-        }
-
-        return null;
     }
 
     getCoords() {

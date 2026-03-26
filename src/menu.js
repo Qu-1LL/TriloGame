@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js'
 import { Creature } from './creature.js'
 import { Building } from './building.js'
 import { toCoords } from './cave.js'
+import { Scaffolding } from './buildings/scaffolding.js'
 
 export class Menu {
 
@@ -144,9 +145,28 @@ export class Menu {
             this.game.movePath = false
         })
 
+        let builderButton = PIXI.Sprite.from('window_4x1')
+        builderButton.x = this.bounds.minX + (10 * this.scale)
+        builderButton.y = buildButton.y + buildButton.height + (10 * this.scale)
+        this.addMenuItem(builderButton,1,0.6,true)
+        let builderText = new PIXI.Text({text: 'Builder',style: style })
+        builderText.x = builderButton.position.x + (15 * this.scale)
+        builderText.y = builderButton.position.y + (7 * this.scale)
+        this.addMenuItem(builderText,2,1,false)
+
+        builderButton.on('mouseup', () => {
+            this.object.assignment = "builder"
+            this.object.clearActionQueue()
+            const behavior = this.object.getBehavior()
+            if (typeof behavior === 'function') {
+                behavior.call(this.object)
+            }
+            this.game.cleanActive()
+        })
+
         let mineButton = PIXI.Sprite.from('window_4x1')
         mineButton.x = this.bounds.minX + (10 * this.scale)
-        mineButton.y = buildButton.y + buildButton.height + (10 * this.scale)
+        mineButton.y = builderButton.y + builderButton.height + (10 * this.scale)
         this.addMenuItem(mineButton,1,0.6,true)
         let mineText = new PIXI.Text({text: 'Mine',style: style })
         mineText.x = mineButton.position.x + (15 * this.scale)
@@ -291,26 +311,23 @@ export class Menu {
                 }
             })
             myButton.on('mouseup', (event) => {
-
-                this.game.buildMode = true
-                this.game.floatingBuilding.building = building.build()
-                this.game.floatingBuilding.sprite = this.game.floatingBuilding.building.sprite
-
-                this.game.tileContainer.addChild(this.game.floatingBuilding.sprite)
-                this.game.floatingBuilding.sprite.zIndex = 5
+                if (this.game.floatingBuilding.sprite) {
+                    this.game.clearFloatingBuilding({ destroySprite: true })
+                }
 
                 let rect = this.game.app.canvas.getBoundingClientRect();
                 let pos = {
                     x: event.clientX - rect.left,
                     y: event.clientY - rect.top
                 };
-                this.game.floatingBuilding.sprite.x = pos.x - rect.left
-                this.game.floatingBuilding.sprite.y = pos.y - rect.top
-                this.game.floatingBuilding.sprite.baseX = pos.x - rect.left
-                this.game.floatingBuilding.sprite.baseY = pos.y - rect.top
-                this.game.floatingBuilding.sprite.scale.set(this.game.currentScale)
-                this.game.floatingBuilding.sprite.anchor.set((1 / (this.game.floatingBuilding.building.size.x * 2)),  (1 / (this.game.floatingBuilding.building.size.y * 2)))
-                this.game.floatingBuilding.rotation = 0
+
+                try {
+                    const targetBuilding = building.build()
+                    const scaffolding = new Scaffolding(this.game, targetBuilding)
+                    this.game.beginBuildingPlacement(scaffolding, pos, targetBuilding.sprite)
+                } catch (error) {
+                    console.error(error)
+                }
             })
 
             marginAccumulate += (myButton.height + (10 * this.scale))

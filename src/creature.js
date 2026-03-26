@@ -134,6 +134,9 @@ export class Creature {
         if (this.assignment === "farmer" && typeof this.farmerStep1 === 'function') {
             return () => this.farmerStep1()
         }
+        if (this.assignment === "builder" && typeof this.builderStep1 === 'function') {
+            return () => this.builderStep1()
+        }
         if (this.assignment === "fighter" && typeof this.fighterStep1 === 'function') {
             return () => this.fighterStep1()
         }
@@ -151,6 +154,32 @@ export class Creature {
         return false
     }
 
+    buildNavigationPathToPoint(destination) {
+        if (!destination || !this.cave) {
+            return null
+        }
+
+        const field = this.cave.buildPointBfsField(destination)
+        if (!(field instanceof Map)) {
+            return null
+        }
+
+        return this.cave.buildPathFromField(field, this.location)
+    }
+
+    buildNavigationPathToBuilding(building) {
+        if (!building || !this.cave) {
+            return null
+        }
+
+        const field = this.cave.ensureBuildingBfsField(building)
+        if (!(field instanceof Map)) {
+            return null
+        }
+
+        return this.cave.buildPathFromField(field, this.location)
+    }
+
     recoverNavigation(destination, fallbackFn) {
         this.clearActionQueue()
 
@@ -158,9 +187,10 @@ export class Creature {
             return this.runNavigationFallback(fallbackFn)
         }
 
-        const reroute = this.cave.bfsPath(toKey(this.location), toKey(destination))
+        const reroute = this.buildNavigationPathToPoint(destination)
         if (reroute && reroute.length > 1) {
-            this._enqueueNavigationPath(reroute, destination, fallbackFn, false)
+            const target = { x: destination.x, y: destination.y }
+            this._enqueueResolvedPath(reroute, () => this.recoverNavigation(target, fallbackFn), false)
             return false
         }
 
@@ -171,10 +201,30 @@ export class Creature {
         return this.runNavigationFallback(fallbackFn)
     }
 
-    executeNavigationStep(next, destination, fallbackFn) {
+    recoverBuildingNavigation(building, fallbackFn) {
+        this.clearActionQueue()
+
+        if (!building) {
+            return this.runNavigationFallback(fallbackFn)
+        }
+
+        const reroute = this.buildNavigationPathToBuilding(building)
+        if (reroute && reroute.length > 1) {
+            this._enqueueResolvedPath(reroute, () => this.recoverBuildingNavigation(building, fallbackFn), false)
+            return false
+        }
+
+        if (reroute && reroute.length === 1) {
+            return true
+        }
+
+        return this.runNavigationFallback(fallbackFn)
+    }
+
+    executeNavigationStep(next, onFailure) {
         const result = this.cave.moveCreature(this, next)
         if (result === false) {
-            return this.recoverNavigation(destination, fallbackFn)
+            return typeof onFailure === 'function' ? onFailure() : false
         }
 
         if (this.pathPreview.length > 0) {
@@ -183,17 +233,12 @@ export class Creature {
         return result
     }
 
-    _enqueueNavigationPath(path, destination, fallbackFn, clearExisting) {
+    _enqueueResolvedPath(path, onFailure, clearExisting) {
         if (clearExisting) {
             this.clearActionQueue()
         }
         if (!path || path.length < 2) {
             return false
-        }
-
-        const target = {
-            x: destination.x,
-            y: destination.y
         }
         const steps = [...path]
         steps.shift()
@@ -203,7 +248,7 @@ export class Creature {
             this.pathPreview.push(next)
 
             this.enqueueAction(() => {
-                return this.executeNavigationStep(next, target, fallbackFn)
+                return this.executeNavigationStep(next, onFailure)
             })
         }
 
@@ -215,7 +260,7 @@ export class Creature {
             return this.runNavigationFallback(fallbackFn)
         }
 
-        const path = this.cave.bfsPath(toKey(this.location), toKey(destination))
+        const path = this.buildNavigationPathToPoint(destination)
         if (!path) {
             return this.runNavigationFallback(fallbackFn)
         }
@@ -223,7 +268,24 @@ export class Creature {
             return true
         }
 
-        return this._enqueueNavigationPath(path, destination, fallbackFn, clearExisting)
+        const target = { x: destination.x, y: destination.y }
+        return this._enqueueResolvedPath(path, () => this.recoverNavigation(target, fallbackFn), clearExisting)
+    }
+
+    navigateToBuilding(building, fallbackFn = this.getNavigationFallback(), clearExisting = true) {
+        if (!building) {
+            return this.runNavigationFallback(fallbackFn)
+        }
+
+        const path = this.buildNavigationPathToBuilding(building)
+        if (!path) {
+            return this.runNavigationFallback(fallbackFn)
+        }
+        if (path.length < 2) {
+            return true
+        }
+
+        return this._enqueueResolvedPath(path, () => this.recoverBuildingNavigation(building, fallbackFn), clearExisting)
     }
 
     queueMovePath(path, fallbackFn = this.getNavigationFallback()) {
@@ -236,7 +298,8 @@ export class Creature {
             return true
         }
 
-        return this._enqueueNavigationPath(path, destination, fallbackFn, true)
+        const target = { x: destination.x, y: destination.y }
+        return this._enqueueResolvedPath(path, () => this.recoverNavigation(target, fallbackFn), true)
     }
 
     appendMovePath(path, fallbackFn = this.getNavigationFallback()) {
@@ -249,7 +312,8 @@ export class Creature {
             return true
         }
 
-        return this._enqueueNavigationPath(path, destination, fallbackFn, false)
+        const target = { x: destination.x, y: destination.y }
+        return this._enqueueResolvedPath(path, () => this.recoverNavigation(target, fallbackFn), false)
     }
 
     getQueuedPathPreview() {
