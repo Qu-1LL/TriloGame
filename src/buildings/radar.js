@@ -6,6 +6,9 @@ export class Radar extends Building {
     constructor(game) {
         super('Radar', {x:4, y:4}, [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], game, false)
         this.sprite = PIXI.Sprite.from('Radar')
+        this.recipe = {
+            Sandstone: 20
+        }
 
         this.radiusMax = 50
         this.currentRadius = 0

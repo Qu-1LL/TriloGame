@@ -11,6 +11,9 @@ export class AlgaeFarm extends Building {
         this.growth = 0
         this.harvestYield = 5
         this.assignments = new Set()
+        this.recipe = {
+            Sandstone: 20
+        }
 
         this.description = `A passable algae farm. Worker trilobites harvest ${this.getHarvestYield()} algae when random < growth/period.`
     }

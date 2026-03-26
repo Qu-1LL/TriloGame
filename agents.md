@@ -11,9 +11,9 @@ This document reflects the currently implemented gameplay and UI behavior in the
 ## Trilobite Roles And Workflows
 
 ### Role: `unassigned`
-- Trigger: default state, or any state that falls back from miner/farmer/fighter.
+- Trigger: default state, or any state that falls back from miner/farmer/builder/fighter.
 - Workflow:
-1. Release `assignedBuilding` if it currently points to a mining post, algae farm, or barracks.
+1. Release `assignedBuilding` if it currently points to a mining post, algae farm, scaffolding, or barracks.
 2. Clear any stored fighter target.
 3. Do no autonomous work until reassigned or given manual movement.
 
@@ -25,7 +25,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - Workflow (`Trilobite` step chain):
 1. Find viable mining posts: post must have inventory space and queued mineable tiles.
 2. Prioritize posts by current assignment load, then approach distance.
-3. Navigate to selected post area.
+3. Navigate to selected post area via the mining post's cached BFS field.
 4. If carrying resources, deposit to post inventory first.
 5. Request and reserve a mineable tile from the post queue.
 6. Validate reservation is still valid.
@@ -52,17 +52,41 @@ This document reflects the currently implemented gameplay and UI behavior in the
 2. If carrying `Algae`, skip to queen delivery.
 3. Find viable algae farms (must have an approach tile).
 4. Prioritize farms by current assignment load, then approach distance.
-5. Store the target farm in `assignedBuilding` and navigate to farm.
+5. Store the target farm in `assignedBuilding` and navigate to farm via that farm's cached BFS field.
 6. Build a route that visits passable farm tiles and returns to origin.
 7. Move along farm route and attempt harvest at each step.
 8. Harvest succeeds when `Math.random() < growth/period`; success gives fixed `harvestYield`.
-9. After harvest, follow the shared queen BFS field one tile at a time until standing on a passable queen tile.
+9. After harvest, follow the queen building's cached BFS field one tile at a time until standing on a passable queen tile.
 10. Feed queen all carried algae.
 11. If queen quota is reached, queen may spawn broodlings and increase next quota.
 12. Loop back to step 1.
 - Failure handling:
 1. If farm/queen unavailable or pathing fails, release assignment and restart selection.
 2. Role checks enforce miner/farmer exclusivity through the shared `assignedBuilding` slot.
+
+### Role: `builder`
+- Trigger:
+1. Select a trilobite.
+2. Open creature menu.
+3. Press `Builder`.
+- Workflow (`Trilobite` step chain):
+1. Pick or keep an in-progress scaffolding by lowest current builder assignment count, then by building-BFS distance.
+2. If carrying a resource the assigned scaffolding still needs, navigate into scaffold work range and deposit it.
+3. If carrying a resource the assigned scaffolding no longer needs, return it to the nearest mining post with free space.
+4. If the scaffolding still needs resources after accounting for builder-held reservations, sort mining posts by the BFS value of the trilobite's current tile in each post's cached field.
+5. Check those posts shortest-to-longest for a resource whose unreserved inventory can satisfy one of the scaffolding's still-unreserved recipe needs.
+6. Immediately reserve that material/amount on both the scaffolding and the chosen mining post.
+7. Navigate to the reserved mining post, withdraw the reserved material into inventory, and clear the mining-post-side reservation.
+8. Navigate back into scaffold work range and deposit the carried material into the scaffolding.
+9. Builders only apply construction work after the full recipe has been deposited into that scaffold.
+10. If a scaffold has no actionable next step for the current builder, that trilobite releases it and can retarget another in-progress scaffold instead of idling permanently on the old one.
+11. Scaffolding completes only when both recipe deposits and rarity-weighted construction work are finished.
+12. Loop back to step 1 while any scaffolding remains in progress.
+- Failure handling:
+1. Invalid or completed scaffolding releases builder assignments and scaffold-side reservations.
+2. Invalid mining-post reservations are cleared and the builder restarts target selection.
+3. If a scaffold is fully supplied/worked but still present because the final building swap failed, builders retry the scaffold completion path instead of treating it as permanently done.
+4. Navigation failure clears queued builder steps and restarts from step 1.
 
 ### Role: `fighter`
 - Trigger:
@@ -77,7 +101,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 5. If a neighboring tile contains an enemy, set that tile as the fighter target and attack.
 6. Otherwise, read the current `enemy` BFS field and move one tile to a neighboring passable tile with a lower value.
 7. Fighters recompute their adjacent-enemy checks before and after each combat move so movement can still be interrupted for attacks.
-8. If no reachable enemy exists while danger is active, navigate back to the least-loaded barracks and rejoin its assignment set.
+8. If no reachable enemy exists while danger is active, navigate back to the least-loaded barracks using its cached BFS field and rejoin its assignment set.
 - Failure handling:
 1. Losing the target enemy clears the fighter target and triggers a fresh enemy search.
 2. Failed combat movement clears queued fighter steps and restarts from step 1.
@@ -102,7 +126,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 3. Hover tiles to preview path.
 4. Click destination tile to queue path.
 - Runtime:
-1. Path steps are enqueued in the creature action queue.
+1. Hover/click path generation uses a temporary destination-seeded distance field rather than direct source-to-goal BFS.
 2. Each simulation tick executes one queued action.
 
 ## Building Types, Data Types, And Workflows
@@ -119,33 +143,66 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `location: { x: number | null, y: number | null }`
 - `health: number` (starts 100)
 - `maxHealth: number` (starts 100)
-- `health: number` (starts 100)
-- `maxHealth: number` (starts 100)
+- `bfsField: Map<string, number>`
+- `updatedField: boolean`
+- `bfsFieldUpdatedTiles: Set<string>`
+- `recipe: Record<string, number> | null` (construction cost for scaffolded buildables)
+- `selectable: boolean` (`false` only for runtime buildings that should ignore normal building selection/menu flow)
 
 ### `openMap` semantics during placement
 - `0`: tile occupied by building, not passable.
 - `1`: tile occupied by building, passable for creatures.
-- `>1`: tile skipped by occupancy write in `build` (reserved behavior).
+- `>1`: tile skipped by `Cave.canBuild` and occupancy write in `build` (reserved behavior).
 
 ### Building placement workflow (all building types)
 1. Creature menu `Build` opens build options.
-2. Selecting a building creates an instance via `Factory.build()`.
-3. Game enters `buildMode` and shows floating placement sprite.
-4. Mouse move updates floating sprite position.
-5. `R` rotates sprite and `openMap`.
+2. Selecting a normal building creates the real target instance via `Factory.build()`, then wraps it in a `Scaffolding` instance.
+3. Game enters `buildMode` and shows the floating final-building sprite while keeping the scaffolding instance as the object that will actually be placed.
+4. Mouse move updates the floating preview position.
+5. `R` rotates the floating final-building preview and the underlying scaffolding/target-building footprint together.
 6. Click empty tile to attempt placement.
-7. `Cave.canBuild` validates all required footprint tiles.
-8. `Cave.build` writes building occupancy/passability, stores `tileArray`, adds sprite.
-9. Optional `onBuilt(cave)` hook runs.
-10. `Escape` or successful placement exits active UI state.
-11. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave and their footprint becomes passable again.
-11. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave and their footprint becomes passable again.
+7. `Cave.canBuild` validates all non-`>1` footprint tiles and, once the queen exists, requires every occupied footprint tile to be in the queen-connected reachable-tile set.
+8. `Cave.build` writes building occupancy/passability, stores `tileArray`, and adds the building display object using pivot-based placement for both sprites and multi-cell scaffold containers.
+9. Optional `onBuilt(cave)` runs only for the building instance actually being placed. Scaffolding placement does not trigger the target building's `onBuilt`.
+10. When scaffolding reaches its recipe requirement, it removes itself and places the stored target building at the same top-left tile and rotation; the final target's `onBuilt(cave)` runs at that moment.
+11. `Escape` or successful placement exits active UI state.
+12. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave, their footprint becomes passable again, and creatures assigned to that building clear their stale assignment/work queue.
 
 ### `Factory`
 - Purpose: lightweight blueprint wrapper for unlocked buildings.
 - Data copied from sample instance:
 - `name`, `sprite`, `openMap`, `size`, `description`, `hasStation`.
 - Workflow: `Factory.build()` returns a new runtime building instance.
+
+### `Scaffolding`
+- Type:
+- `size`: mirrors the stored target building.
+- `openMap`: rebuilt from the target building so every `0` or `1` target cell becomes scaffold `0`, while target cells `>1` stay skipped.
+- `hasStation: false`
+- `selectable: true`
+- Runtime data:
+- `targetBuilding: Building`
+- `recipeRequired: Record<string, number>`
+- `recipeDeposited: Record<string, number>`
+- `recipeComplete: boolean`
+- `materialReservations: Map<Creature, { resourceType: string, amount: number }>`
+- `assignments: Set<Creature>`
+- `constructionProgress: number`
+- `constructionRequired: number` (recipe-weighted by material amount and ore rarity)
+- `constructionComplete: boolean`
+- `completionPending: boolean` (true when recipe/work are complete but the final building swap still needs to succeed)
+- `sprite`: `PIXI.Container` root with one `Scaffold` tile sprite per occupied scaffold cell.
+- Workflow:
+1. Constructed automatically from a real target building chosen in the build menu; it is not part of `game.unlockedBuildings`.
+2. Rotating the floating scaffold also rotates the stored target building and regenerates the scaffold footprint/display from the rotated target `openMap`.
+3. While placed, scaffolding blocks the full final occupied footprint, even where the eventual target would be passable.
+4. Builders reserve outstanding recipe needs on scaffolding through `materialReservations` so multiple carriers cannot over-claim the same missing material.
+5. `deposit()` only accepts resources that still have remaining requirement, clamps the accepted amount to that remainder, and clears that builder's scaffold-side reservation.
+6. `getRecipeProgress()` returns cloned required/deposited/remaining counts plus reserved totals and construction-progress state.
+7. `applyConstructionWork()` advances rarity-weighted build progress separately from material deposits.
+8. `completeConstruction()` only succeeds once both recipe deposits and construction progress are complete; then it removes the scaffold and places the stored target at the same top-left location and rotation through normal `Cave.build` logic.
+9. If scaffolding is destroyed before completion, the stored target is discarded and no final building is placed.
+10. If final placement fails during completion, the scaffold rebuilds itself at the same location, preserves progress, and remains retryable instead of becoming a dead completed scaffold.
 
 ### `Queen`
 - Type:
@@ -171,10 +228,12 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `openMap: [[1,1,1],[1,0,1],[1,1,1]]`
 - `hasStation: true`
 - Runtime data:
+- `recipe: { Sandstone: 20 }`
 - `capacity: number` (1000)
 - `radius: number` (10)
 - `inventory: Record<string, number>`
 - `assignments: Map<Creature, string | null>`
+- `materialReservations: Map<Creature, { resourceType: string, amount: number }>`
 - `mineableQueues: Record<string, string[]>`
 - `mineableQueueHeads: Record<string, number>`
 - `mineableTypes: string[]`
@@ -184,7 +243,8 @@ This document reflects the currently implemented gameplay and UI behavior in the
 2. Miners are assigned to post and optionally to reserved tile keys.
 3. Post provides filtered, non-conflicting mining targets.
 4. Miner deposits resources via `deposit`.
-5. Tile changes invalidate queues; queues lazily rebuild on next use.
+5. Builders compare post inventory against `materialReservations`, reserve material on a chosen post without decrementing inventory immediately, and only reduce inventory when they call `withdrawReservedMaterial`.
+6. Tile changes invalidate queues; queues lazily rebuild on next use.
 
 ### `AlgaeFarm`
 - Type:
@@ -192,6 +252,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `openMap: [[1,1],[1,1],[1,1]]` (fully passable)
 - `hasStation: false`
 - Runtime data:
+- `recipe: { Sandstone: 20 }`
 - `period: number` (30)
 - `growth: number`
 - `harvestYield: number` (5)
@@ -209,6 +270,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `openMap: [[1,1,1],[1,0,1],[1,1,1]]`
 - `hasStation: true`
 - Runtime data:
+- `recipe: { Sandstone: 20 }`
 - `assignments: Set<Creature>`
 - Workflow:
 1. Placeable via build menu.
@@ -222,6 +284,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `openMap: [[0,0],[0,0]]`
 - `hasStation: false`
 - Runtime data:
+- `recipe: { Sandstone: 20 }`
 - `capacity: number` (20)
 - Workflow:
 1. Placeable via build menu.
@@ -233,7 +296,8 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `openMap: [[0,0],[0,1]]`
 - `hasStation: true`
 - Runtime data:
-- recipe system not implemented yet.
+- `recipe: { Sandstone: 20 }`
+- crafting recipe system not implemented yet.
 - Workflow:
 1. Placeable via build menu.
 2. Crafting interactions are placeholders only.
@@ -244,6 +308,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `openMap: [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]`
 - `hasStation: false`
 - Runtime data:
+- `recipe: { Sandstone: 20 }`
 - `radiusMax: number` (starts 50)
 - `currentRadius: number` (starts 0)
 - `growthChance: number` (`0.1`, or 1 in 10 per tick)
@@ -266,12 +331,16 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - cave generation,
 - tile/building/creature runtime state,
 - `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
-- pathfinding (`bfsPath`),
-- game-held BFS distance fields for `enemy`, `colony`, and `queen`, computed only over revealed tiles,
+- `reachableTiles`, a live `Set<Tile>` tracking the currently passable tiles connected to the queen building's passable footprint,
+- temporary destination-seeded distance-field generation for manual movement and non-building targets,
+- per-building lazy BFS fields over reachable tiles only,
+- game-held BFS distance fields for `enemy` and `colony`, computed only over revealed tiles,
 - full rebuilds of the `enemy` and `colony` fields during combat-phase handoff,
-- incremental BFS-field rebalancing when buildings are placed, walls are mined, creatures spawn, or new tiles are revealed,
+- lazy building-field dirtying/rebalancing when buildings are placed/removed or tiles are mined,
+- incremental BFS-field rebalancing when creatures spawn or new tiles are revealed,
+- reachable-tile recomputation when buildings are placed/removed or wall mining changes passable connectivity,
 - creature deaths rely on the next combat-phase BFS rebuild instead of triggering an immediate rebalance,
-- movement, spawn, and removal rules,
+- movement, spawn, and removal rules, including denying spawns onto unreachable tiles,
 - danger-state syncing for enemy spawn/death, including clearing `game.danger` when the last enemy is removed,
 - full-party healing for all remaining creatures when the last enemy is removed,
 - trilobite tile-occupancy syncing during spawn/move/removal,
@@ -282,14 +351,16 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - action queue (`NodeQueue`),
 - path queue/path preview,
 - combat state (`health`, `maxHealth`, `damage`) and basic damage/death handling,
-- navigation helpers,
+- navigation helpers that reconstruct routes from distance fields instead of direct `bfsPath` calls,
 - sprite-placement helper that snaps movers to the destination tile center and then applies a fresh random 1-15 px radial offset on each completed move,
 - generic selection/build interactions.
 - `Trilobite extends Creature`:
 - inventory model,
-- role system (`unassigned`, `miner`, `farmer`, `fighter`),
+- role system (`unassigned`, `miner`, `farmer`, `builder`, `fighter`),
 - role-specific multi-step workflows,
-- shared `assignedBuilding` state for mining/farming/barracks assignments,
+- building navigation via the assigned building's lazy cached BFS field,
+- shared `assignedBuilding` state for mining/farming/scaffolding/barracks assignments,
+- `builderSourcePost` for the currently reserved mining-post pickup,
 - `pendingMineTileKey` for reserved mining targets.
 - `fighterTargetTileKey` for the current enemy tile target.
 - `Enemy extends Creature`:
@@ -298,7 +369,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 
 ### Building layer
 - `Building` is the base type for all placeables.
-- Subclasses: `Queen`, `MiningPost`, `AlgaeFarm`, `Barracks`, `Storage`, `Smith`, `Radar`.
+- Subclasses: `Queen`, `MiningPost`, `AlgaeFarm`, `Barracks`, `Storage`, `Smith`, `Radar`, `Scaffolding`.
 - `Factory` wraps buildable classes for menu/unlock usage.
 
 ### UI/controller layer
@@ -308,6 +379,14 @@ This document reflects the currently implemented gameplay and UI behavior in the
 ### Supporting data types
 - `Ore` is an enum-like class for resource names.
 - `NodeQueue` is a linked-list queue used for deferred creature actions.
+
+## Initial Colony Setup (`main.js`)
+- Startup placement workflow:
+1. The game places the queen first.
+2. Startup also places one finished mining post through normal `Cave.build` logic instead of scaffolding.
+3. The starter mining post must fit on reachable tiles, stay at least 5 Manhattan tiles away from any wall/void across its occupied footprint, and have its center within 10 Manhattan tiles of the queen center.
+4. If a random queen placement does not allow such a mining post, startup retries queen placement and falls back to an exhaustive search if needed.
+5. After the starter buildings are placed, the four initial trilobites spawn on queen tiles.
 
 ## Implemented Events And Input Behavior
 
@@ -354,7 +433,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 2. Reset drag flag.
 - `mousemove`:
 1. If drag exceeds threshold, pan world view.
-2. If in `buildMode`, move floating building sprite to cursor.
+2. If in `buildMode`, move the floating target-building preview to the cursor.
 - `mouseup`:
 1. If dragging, commit pan delta into base coordinates.
 2. End drag operation.
@@ -364,11 +443,11 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - If `game.danger` is `true`, rebuild the `enemy` BFS field, process all non-enemy creatures once, rebuild the `colony` BFS field, process all enemies once, then run buildings with `tick()` hooks.
 - If `game.danger` is `false`, do not rebuild either combat BFS field; process non-enemy creatures once so fighters can return to barracks or idle, skip enemy processing, then run buildings with `tick()` hooks.
 3. `Space`: call `game.cleanActive()` and then toggle auto-tick pause/run.
-4. While paused, `1`/`2`/`3` display the `queen`/`enemy`/`colony` BFS field as centered yellow tile labels; finite distances are shown and blocked or unreachable revealed tiles are left blank; `4` does nothing.
+4. While paused, `1`/`2`/`3` display the queen building field / `enemy` field / `colony` field as centered yellow tile labels; finite distances are shown and blocked or unreachable revealed tiles are left blank; `4` does nothing.
 5. While unpaused, `1`/`2`/`3`/`4` set tick speed to 500/250/100/50 ms.
-6. `P`: spawn a debug enemy on a random revealed, passable, unoccupied tile if one exists, then log tick state (creatures and mining posts).
+6. `P`: spawn a debug enemy on a random reachable, passable, unoccupied tile if one exists, then log tick state (creatures and mining posts).
 7. `Escape`: `game.cleanActive()` (close menus, clear previews, cancel active mode, clear BFS debug labels).
-8. `R`: if building placement active, rotate floating building and anchor/orientation state.
+8. `R`: if building placement is active, rotate the floating display plus the underlying building/scaffolding `openMap` and update the pivot/orientation state used for tile-aligned placement.
 9. Hold `W`/`A`/`S`/`D` to continuously pan the world at 800 screen px/s by applying the same base-position camera offset updates used by click-and-drag panning.
 - `keyup`:
 1. Releasing `W`/`A`/`S`/`D` clears that held pan direction.
@@ -394,20 +473,22 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `mouseup`:
 1. Ignored while dragging.
 2. Forwards click to underlying footprint tile event first.
-3. If no carry mode active (`movePath`/`buildMode`), selects the building.
+3. If no carry mode is active and the placed building is selectable, selects the building.
 - `pointerout`: forwards pointer-out to underlying footprint tile.
 
 ### Menu/button events (`Menu`)
 - Creature menu:
 1. `Move` button `mouseup`: enter move-path mode and clear committed path preview.
 2. `Build` button `mouseup`: re-open menu as build options menu.
-3. `Mine` button `mouseup`: set role to miner, clear queue, enqueue miner behavior, close active UI.
-4. `Farm` button `mouseup`: set role to farmer, clear queue, enqueue farmer behavior, close active UI.
-5. `Fight` button `mouseup`: set role to fighter, clear queue, enqueue fighter behavior, close active UI.
+3. `Builder` button `mouseup`: set role to builder, clear queue, enqueue builder behavior, close active UI.
+4. `Mine` button `mouseup`: set role to miner, clear queue, enqueue miner behavior, close active UI.
+5. `Farm` button `mouseup`: set role to farmer, clear queue, enqueue farmer behavior, close active UI.
+6. `Fight` button `mouseup`: set role to fighter, clear queue, enqueue fighter behavior, close active UI.
 - Build options menu:
 1. Building option `pointerover`: show right-panel preview sprite + size/description.
 2. Building option `pointerout`: clear hover preview panel.
-3. Building option `mouseup`: create floating building instance and enter placement mode.
+3. Building option `mouseup`: create the target building, wrap it in scaffolding, and enter placement mode with the target building sprite attached to the cursor.
+4. Selecting a different build option while a placement preview is already active destroys the old floating preview plus its pending scaffolding state before showing the new one.
 
 ### Hover-specific behavior
 - During move mode, hovering passable tile outside menu panel previews BFS path from selected creature.
@@ -426,29 +507,31 @@ This document reflects the currently implemented gameplay and UI behavior in the
 
 ### Creature menu flow
 1. Header/title and coordinate card are shown.
-2. Action buttons shown: `Move`, `Build`, `Mine`, `Farm`, `Fight`.
+2. Action buttons shown: `Move`, `Build`, `Builder`, `Mine`, `Farm`, `Fight`.
 3. Branches:
 - `Move` branch: path preview/commit workflow on map tiles.
 - `Build` branch: transitions to build-options list.
-- `Mine`/`Farm`/`Fight` branch: immediate role assignment and autonomous loop start.
+- `Builder`/`Mine`/`Farm`/`Fight` branch: immediate role assignment and autonomous loop start.
 
 ### Build-options menu flow
 1. Lists all buildables returned by `creature.getBuildable()` (from `game.unlockedBuildings`, including `Barracks`).
 2. Hovering an option shows contextual building info preview.
-3. Clicking an option enters placement workflow with floating sprite.
-4. Placement click on valid tile commits build; invalid tile keeps placement active.
-5. `Escape` exits the flow and clears floating state.
+3. Clicking an option creates the real target building, wraps it in scaffolding, and enters placement workflow with the target building sprite attached to the cursor.
+4. Clicking a different option while placement is already active destroys the old floating preview and pending scaffolding state before showing the new target-building preview.
+5. Placement click on valid tile commits build; invalid tile keeps placement active.
+6. `Escape` exits the flow and clears floating state.
 
 ### Building menu flow
 - `buildingMenu()` exists but currently has placeholder comments only.
-- Buildings can be selected; no building-specific interaction UI is implemented yet.
+- Selectable placed buildings can be selected; no building-specific interaction UI is implemented yet.
+- Placed scaffolding follows the normal building selection flow and can be clicked/selected like any other building.
 
 ### Menu/Game state interaction
 - `cleanActive()` is the central reset:
 1. Destroys floating path sprites and building edge highlights.
 2. Clears any active BFS debug overlay labels.
 3. Exits move/build modes.
-4. Removes floating building sprite.
+4. Removes and destroys the floating building sprite.
 5. Closes and destroys active menu sprites.
 6. Clears selected object and selected-path overlays.
 - Several workflows call `cleanActive()` to prevent mode overlap and stale UI.

@@ -5,6 +5,7 @@ import { AlgaeFarm } from '../buildings/algae-farm.js'
 import { Barracks } from '../buildings/barracks.js'
 import { MiningPost } from '../buildings/mining-post.js'
 import { Queen } from '../buildings/queen.js'
+import { Scaffolding } from '../buildings/scaffolding.js'
 import { Ore } from '../ores.js'
 import { toCoords, toKey } from '../cave.js'
 
@@ -47,6 +48,8 @@ export class Trilobite extends Creature {
         this.pendingMineTileKey = null
         this.fighterTargetTileKey = null
         this.fighterPathMode = null
+        this.builderSourcePost = null
+        this.builderWorkRate = 5
     }
 
     getInventory() {
@@ -119,6 +122,9 @@ export class Trilobite extends Creature {
         if (this.assignment === "farmer") {
             return this.farmerBehavior
         }
+        if (this.assignment === "builder") {
+            return this.builderBehavior
+        }
         if (this.assignment === "fighter") {
             return this.fighterBehavior
         }
@@ -140,6 +146,10 @@ export class Trilobite extends Creature {
         return this.enqueueAction(() => this.farmerStep1())
     }
 
+    builderBehavior = () => {
+        return this.enqueueAction(() => this.builderStep1())
+    }
+
     fighterBehavior = () => {
         return this.enqueueAction(() => this.fighterStep1())
     }
@@ -150,6 +160,10 @@ export class Trilobite extends Creature {
 
     isFarmer() {
         return this.assignment === "farmer"
+    }
+
+    isBuilder() {
+        return this.assignment === "builder"
     }
 
     isFighter() {
@@ -186,7 +200,7 @@ export class Trilobite extends Creature {
         this.fighterPathMode = null
 
         if (this.isMiner()) {
-            if (this.getAssignedAlgaeFarm()) {
+            if (this.getAssignedBuilding() && !this.getAssignedMiningPost()) {
                 this.releaseAssignedBuilding()
             }
             return true
@@ -207,7 +221,7 @@ export class Trilobite extends Creature {
         this.fighterPathMode = null
 
         if (this.isFarmer()) {
-            if (this.getAssignedMiningPost()) {
+            if (this.getAssignedBuilding() && !this.getAssignedAlgaeFarm()) {
                 this.releaseAssignedBuilding()
             }
             return true
@@ -218,6 +232,30 @@ export class Trilobite extends Creature {
         }
         const fallbackBehavior = this.getBehavior()
         if (typeof fallbackBehavior === 'function' && fallbackBehavior !== this.farmerBehavior) {
+            fallbackBehavior.call(this)
+        }
+        return false
+    }
+
+    ensureBuilderState() {
+        this.clearFighterTarget()
+        this.fighterPathMode = null
+
+        if (this.isBuilder()) {
+            if (this.getAssignedBuilding() && !this.getAssignedScaffolding()) {
+                this.releaseAssignedBuilding()
+            }
+            return true
+        }
+
+        if (this.getAssignedScaffolding()) {
+            this.releaseAssignedBuilding()
+        } else {
+            this.clearBuilderSourcePost()
+        }
+
+        const fallbackBehavior = this.getBehavior()
+        if (typeof fallbackBehavior === 'function' && fallbackBehavior !== this.builderBehavior) {
             fallbackBehavior.call(this)
         }
         return false
@@ -351,6 +389,13 @@ export class Trilobite extends Creature {
         return null
     }
 
+    getAssignedScaffolding() {
+        if (this.assignedBuilding instanceof Scaffolding) {
+            return this.assignedBuilding
+        }
+        return null
+    }
+
     setAssignedBuilding(building) {
         if (this.assignedBuilding === building) {
             return true
@@ -362,6 +407,8 @@ export class Trilobite extends Creature {
     }
 
     releaseAssignedBuilding() {
+        this.clearBuilderSourcePost()
+
         const assignedBuilding = this.assignedBuilding
         if (!assignedBuilding) {
             this.pendingMineTileKey = null
@@ -375,10 +422,25 @@ export class Trilobite extends Creature {
             assignedBuilding.removeAssignment(this)
         } else if (assignedBuilding instanceof AlgaeFarm || assignedBuilding instanceof Barracks) {
             assignedBuilding.removeAssignment(this)
+        } else if (assignedBuilding instanceof Scaffolding) {
+            assignedBuilding.removeAssignment(this)
+            assignedBuilding.releaseMaterialReservation(this)
         }
 
         this.pendingMineTileKey = null
         this.assignedBuilding = null
+    }
+
+    clearBuilderSourcePost(releaseReservation = true) {
+        if (releaseReservation && this.builderSourcePost && typeof this.builderSourcePost.releaseMaterialReservation === 'function') {
+            this.builderSourcePost.releaseMaterialReservation(this)
+        }
+
+        this.builderSourcePost = null
+    }
+
+    getBuilderWorkRate() {
+        return this.builderWorkRate
     }
 
     clearFighterTarget() {
@@ -551,7 +613,7 @@ export class Trilobite extends Creature {
             return this.tryNavigateBarracks(orderedBarracks, index + 1)
         }
 
-        const path = this.cave?.bfsPath(toKey(this.location), toKey(approachTile))
+        const path = this.buildNavigationPathToBuilding(barracks)
         if (!path) {
             this.releaseAssignedBuilding()
             return this.tryNavigateBarracks(orderedBarracks, index + 1)
@@ -792,7 +854,7 @@ export class Trilobite extends Creature {
             return this.tryNavigateAlgaeFarms(orderedFarms, index + 1)
         }
 
-        if (!this.navigateTo(approachTile, navFallback)) {
+        if (!this.navigateToBuilding(farm, navFallback)) {
             this.releaseAssignedBuilding()
             return this.tryNavigateAlgaeFarms(orderedFarms, index + 1)
         }
@@ -846,7 +908,7 @@ export class Trilobite extends Creature {
                 this.releaseAssignedBuilding()
                 return this.farmerStep1()
             }
-            if (!this.navigateTo(approachTile, navFallback)) {
+            if (!this.navigateToBuilding(farm, navFallback)) {
                 return false
             }
 
@@ -921,7 +983,7 @@ export class Trilobite extends Creature {
             return this.farmerStep5()
         }
 
-        const nextLocation = this.cave?.getBfsFieldNextStep('queen', this.location)
+        const nextLocation = this.cave?.getBuildingBfsFieldNextStep(queen, this.location)
         if (!nextLocation) {
             this.enqueueAction(() => this.farmerStep1())
             return false
@@ -1058,7 +1120,7 @@ export class Trilobite extends Creature {
             return this.tryNavigateMiningPosts(orderedPosts, index + 1)
         }
 
-        if (!this.navigateTo(approachTile, navFallback)) {
+        if (!this.navigateToBuilding(post, navFallback)) {
             this.releaseAssignedBuilding()
             return this.tryNavigateMiningPosts(orderedPosts, index + 1)
         }
@@ -1105,7 +1167,7 @@ export class Trilobite extends Creature {
                     this.releaseAssignedBuilding()
                     return this.minerStep1()
                 }
-                if (!this.navigateTo(approachTile, navFallback)) {
+                if (!this.navigateToBuilding(miningPost, navFallback)) {
                     return false
                 }
 
@@ -1289,6 +1351,449 @@ export class Trilobite extends Creature {
         }
 
         return this.minerStep1()
+    }
+
+    getScaffoldingBuildings() {
+        if (!this.cave) {
+            return []
+        }
+
+        const scaffoldingBuildings = []
+        for (const building of this.cave.buildings) {
+            if (building instanceof Scaffolding && building.isInProgress()) {
+                scaffoldingBuildings.push(building)
+            }
+        }
+
+        return scaffoldingBuildings
+    }
+
+    getBuilderSupplyOptionForScaffold(scaffold, orderedPosts = this.getBuilderMiningPostPriorityList()) {
+        if (!(scaffold instanceof Scaffolding)) {
+            return null
+        }
+
+        const neededResources = scaffold.getNeededResourceTypes({ includeReservations: true, excludeCreature: this })
+        if (neededResources.length === 0) {
+            return null
+        }
+
+        for (const post of orderedPosts) {
+            for (const resourceType of neededResources) {
+                const missingAmount = scaffold.getUnreservedRemainingRequirement(resourceType, this)
+                const availableAmount = post.getAvailableInventory(resourceType, this)
+                const reserveAmount = Math.min(this.getInventoryCapacity(), missingAmount, availableAmount)
+                if (reserveAmount <= 0) {
+                    continue
+                }
+
+                return {
+                    post,
+                    resourceType,
+                    amount: reserveAmount
+                }
+            }
+        }
+
+        return null
+    }
+
+    canActOnScaffold(scaffold) {
+        if (!(scaffold instanceof Scaffolding) || !scaffold.isInProgress()) {
+            return false
+        }
+
+        if (this.hasInventory()) {
+            return scaffold.needsResource(this.inventory.type)
+        }
+
+        const scaffoldReservation = scaffold.getMaterialReservation(this)
+        const postReservation = this.builderSourcePost?.getMaterialReservation(this)
+        if (scaffoldReservation || postReservation) {
+            return true
+        }
+
+        if (!scaffold.isRecipeComplete()) {
+            return this.getBuilderSupplyOptionForScaffold(scaffold) !== null
+        }
+
+        if (scaffold.needsConstructionWork()) {
+            return true
+        }
+
+        return scaffold.isConstructionComplete()
+    }
+
+    getScaffoldingPriorityList({ actionableOnly = false, excludeScaffolds = [] } = {}) {
+        const excludedScaffolds = new Set(excludeScaffolds)
+        const viableScaffolds = this.getScaffoldingBuildings().filter((scaffold) => {
+            if (excludedScaffolds.has(scaffold)) {
+                return false
+            }
+
+            const distance = this.cave?.getBuildingBfsFieldValue(scaffold, this.location) ?? Infinity
+            if (!Number.isFinite(distance)) {
+                return false
+            }
+
+            if (actionableOnly && !this.canActOnScaffold(scaffold)) {
+                return false
+            }
+
+            return true
+        })
+
+        return [...viableScaffolds].sort((a, b) => {
+            const loadDiff = a.getVolume() - b.getVolume()
+            if (loadDiff !== 0) {
+                return loadDiff
+            }
+
+            const aDistance = this.cave?.getBuildingBfsFieldValue(a, this.location) ?? Infinity
+            const bDistance = this.cave?.getBuildingBfsFieldValue(b, this.location) ?? Infinity
+            if (aDistance !== bDistance) {
+                return aDistance - bDistance
+            }
+
+            return squaredDistance(this.location, a.location) - squaredDistance(this.location, b.location)
+        })
+    }
+
+    getBuilderMiningPostPriorityList() {
+        const viablePosts = this.getMiningPosts().filter((post) => {
+            const distance = this.cave?.getBuildingBfsFieldValue(post, this.location) ?? Infinity
+            return Number.isFinite(distance)
+        })
+
+        return [...viablePosts].sort((a, b) => {
+            const aDistance = this.cave?.getBuildingBfsFieldValue(a, this.location) ?? Infinity
+            const bDistance = this.cave?.getBuildingBfsFieldValue(b, this.location) ?? Infinity
+            if (aDistance !== bDistance) {
+                return aDistance - bDistance
+            }
+
+            return squaredDistance(this.location, a.location) - squaredDistance(this.location, b.location)
+        })
+    }
+
+    isInBuildingWorkRange(building, location = this.location) {
+        if (!this.cave || !building) {
+            return false
+        }
+
+        return this.cave.getBuildingBfsFieldValue(building, location) === 0
+    }
+
+    ensureBuilderAssignment({ actionableOnly = false, excludeScaffolds = [] } = {}) {
+        const excludedScaffolds = new Set(excludeScaffolds)
+        const assignedScaffold = this.getAssignedScaffolding()
+        if (
+            assignedScaffold?.isInProgress() &&
+            !excludedScaffolds.has(assignedScaffold) &&
+            (!actionableOnly || this.canActOnScaffold(assignedScaffold))
+        ) {
+            assignedScaffold.assign(this)
+            return assignedScaffold
+        }
+
+        if (assignedScaffold) {
+            this.releaseAssignedBuilding()
+        }
+
+        const orderedScaffolds = this.getScaffoldingPriorityList({
+            actionableOnly,
+            excludeScaffolds
+        })
+        if (orderedScaffolds.length === 0) {
+            this.releaseAssignedBuilding()
+            return null
+        }
+
+        const scaffold = orderedScaffolds[0]
+        this.setAssignedBuilding(scaffold)
+        scaffold.assign(this)
+        return scaffold
+    }
+
+    builderDepositInventoryToNearestMiningPost = () => {
+        if (!this.ensureBuilderState()) {
+            return false
+        }
+
+        if (!this.hasInventory()) {
+            return this.builderStep1()
+        }
+
+        const orderedPosts = this.getBuilderMiningPostPriorityList().filter((post) => post.getInventorySpace() > 0)
+        if (orderedPosts.length === 0) {
+            return false
+        }
+
+        const post = orderedPosts[0]
+        if (!post.isLocationOnPost(this.location)) {
+            const navFallback = () => this.builderDepositInventoryToNearestMiningPost()
+            if (!this.navigateToBuilding(post, navFallback)) {
+                return false
+            }
+
+            this.enqueueAction(() => this.builderDepositInventoryToNearestMiningPost())
+            return true
+        }
+
+        const accepted = post.deposit(this.inventory.type, this.inventory.amount)
+        this.removeFromInventory(accepted)
+
+        if (this.hasInventory()) {
+            this.enqueueAction(() => this.builderDepositInventoryToNearestMiningPost())
+            return false
+        }
+
+        return this.builderStep1()
+    }
+
+    builderStep1 = () => {
+        if (!this.ensureBuilderState()) {
+            return false
+        }
+
+        const scaffold = this.ensureBuilderAssignment({ actionableOnly: true })
+        if (!scaffold) {
+            if (this.hasInventory()) {
+                return this.builderDepositInventoryToNearestMiningPost()
+            }
+            return false
+        }
+
+        const scaffoldReservation = scaffold.getMaterialReservation(this)
+        const postReservation = this.builderSourcePost?.getMaterialReservation(this)
+
+        if (this.hasInventory()) {
+            if (scaffold.needsResource(this.inventory.type)) {
+                return this.builderStep4()
+            }
+            scaffold.releaseMaterialReservation(this)
+            return this.builderDepositInventoryToNearestMiningPost()
+        }
+
+        if (scaffoldReservation && this.builderSourcePost && postReservation) {
+            return this.builderStep3()
+        }
+
+        if (scaffoldReservation && !this.builderSourcePost) {
+            scaffold.releaseMaterialReservation(this)
+        } else if (!scaffoldReservation && this.builderSourcePost) {
+            this.clearBuilderSourcePost()
+        }
+
+        if (scaffold.needsAnyResource({ includeReservations: true, excludeCreature: this }) && this.builderStep2()) {
+            return true
+        }
+
+        if (scaffold.isRecipeComplete() && scaffold.needsConstructionWork()) {
+            return this.builderStep5()
+        }
+
+        if (scaffold.isRecipeComplete() && scaffold.isConstructionComplete()) {
+            if (scaffold.tryCompleteConstruction(this)) {
+                return true
+            }
+        }
+
+        this.releaseAssignedBuilding()
+        return false
+    }
+
+    builderStep2 = () => {
+        if (!this.ensureBuilderState()) {
+            return false
+        }
+
+        const scaffold = this.getAssignedScaffolding()
+        if (!scaffold) {
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        const orderedPosts = this.getBuilderMiningPostPriorityList()
+        const supplyOption = this.getBuilderSupplyOptionForScaffold(scaffold, orderedPosts)
+        if (!supplyOption) {
+            return false
+        }
+
+        const scaffoldReserved = scaffold.reserveMaterial(this, supplyOption.resourceType, supplyOption.amount)
+        if (scaffoldReserved <= 0) {
+            return false
+        }
+
+        const postReserved = supplyOption.post.reserveMaterial(this, supplyOption.resourceType, scaffoldReserved)
+        if (postReserved !== scaffoldReserved) {
+            scaffold.releaseMaterialReservation(this)
+            supplyOption.post.releaseMaterialReservation(this)
+            return false
+        }
+
+        this.builderSourcePost = supplyOption.post
+
+        if (supplyOption.post.isLocationOnPost(this.location)) {
+            return this.builderStep3()
+        }
+
+        const navFallback = () => {
+            scaffold.releaseMaterialReservation(this)
+            this.clearBuilderSourcePost()
+            return this.builderStep1()
+        }
+
+        if (!this.navigateToBuilding(supplyOption.post, navFallback)) {
+            return false
+        }
+
+        this.enqueueAction(() => this.builderStep3())
+        return true
+    }
+
+    builderStep3 = () => {
+        if (!this.ensureBuilderState()) {
+            return false
+        }
+
+        const scaffold = this.getAssignedScaffolding()
+        const post = this.builderSourcePost
+        const scaffoldReservation = scaffold?.getMaterialReservation(this)
+        const postReservation = post?.getMaterialReservation(this)
+
+        if (!scaffold || !post || !scaffoldReservation || !postReservation || scaffoldReservation.resourceType !== postReservation.resourceType) {
+            scaffold?.releaseMaterialReservation(this)
+            this.clearBuilderSourcePost()
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        if (this.hasInventory()) {
+            return this.builderStep4()
+        }
+
+        if (!post.isLocationOnPost(this.location)) {
+            const navFallback = () => {
+                scaffold.releaseMaterialReservation(this)
+                this.clearBuilderSourcePost()
+                return this.builderStep1()
+            }
+
+            if (!this.navigateToBuilding(post, navFallback)) {
+                return false
+            }
+
+            this.enqueueAction(() => this.builderStep3())
+            return true
+        }
+
+        const withdrawn = post.withdrawReservedMaterial(this, Math.min(this.getInventorySpace(), scaffoldReservation.amount))
+        if (!withdrawn || withdrawn.amount <= 0) {
+            scaffold.releaseMaterialReservation(this)
+            this.clearBuilderSourcePost()
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        const added = this.addToInventory(withdrawn.resourceType, withdrawn.amount)
+        if (added !== withdrawn.amount) {
+            post.deposit(withdrawn.resourceType, withdrawn.amount)
+            scaffold.releaseMaterialReservation(this)
+            this.clearBuilderSourcePost()
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        this.builderSourcePost = null
+        return this.builderStep4()
+    }
+
+    builderStep4 = () => {
+        if (!this.ensureBuilderState()) {
+            return false
+        }
+
+        const scaffold = this.getAssignedScaffolding()
+        if (!this.hasInventory()) {
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        if (!scaffold || !scaffold.isInProgress()) {
+            return this.builderDepositInventoryToNearestMiningPost()
+        }
+
+        if (!scaffold.needsResource(this.inventory.type)) {
+            scaffold.releaseMaterialReservation(this)
+            return this.builderDepositInventoryToNearestMiningPost()
+        }
+
+        if (!this.isInBuildingWorkRange(scaffold)) {
+            const navFallback = () => {
+                scaffold.releaseMaterialReservation(this)
+                return this.builderDepositInventoryToNearestMiningPost()
+            }
+
+            if (!this.navigateToBuilding(scaffold, navFallback)) {
+                return false
+            }
+
+            this.enqueueAction(() => this.builderStep4())
+            return true
+        }
+
+        const accepted = scaffold.deposit(this.inventory.type, this.inventory.amount, this)
+        this.removeFromInventory(accepted)
+
+        if (this.hasInventory()) {
+            return this.builderDepositInventoryToNearestMiningPost()
+        }
+
+        return this.builderStep1()
+    }
+
+    builderStep5 = () => {
+        if (!this.ensureBuilderState()) {
+            return false
+        }
+
+        const scaffold = this.getAssignedScaffolding()
+        if (!scaffold || !scaffold.isInProgress()) {
+            this.releaseAssignedBuilding()
+            return false
+        }
+
+        if (this.hasInventory()) {
+            return this.builderStep4()
+        }
+
+        if (!scaffold.isRecipeComplete()) {
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        if (!scaffold.needsConstructionWork()) {
+            return this.builderStep1()
+        }
+
+        if (!this.isInBuildingWorkRange(scaffold)) {
+            const navFallback = () => this.builderStep1()
+            if (!this.navigateToBuilding(scaffold, navFallback)) {
+                return false
+            }
+
+            this.enqueueAction(() => this.builderStep5())
+            return true
+        }
+
+        const worked = scaffold.applyConstructionWork(this.getBuilderWorkRate(), this)
+        if (worked <= 0) {
+            this.enqueueAction(() => this.builderStep1())
+            return false
+        }
+
+        return worked
     }
 
 }

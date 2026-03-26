@@ -3,7 +3,7 @@ import { toCoords } from './cave.js'
 import { Menu } from './menu.js'
 import { Ore } from './ores.js'
 import { Creature } from './creature.js'
-import { Building, Factory } from './building.js'
+import { Building, BUILD_TILE_HALF_SIZE, Factory, destroyDisplayObject } from './building.js'
 import { AlgaeFarm } from './buildings/algae-farm.js'
 import { Barracks } from './buildings/barracks.js'
 import { MiningPost } from './buildings/mining-post.js'
@@ -66,8 +66,7 @@ export class Game {
 
         this.bfsFields = {
             enemy: new Map(),
-            colony: new Map(),
-            queen: new Map()
+            colony: new Map()
         }
         this.activeBfsDebugField = null
         this.bfsDebugLabels = new Map()
@@ -214,6 +213,110 @@ export class Game {
 
     previewWorldPan(screenDx, screenDy) {
         this.syncWorldSpriteTransforms(screenDx, screenDy, { skipFloatingBuildingOffset: true })
+    }
+
+    setBuildingDisplayPivot(displayObject, pivotX, pivotY) {
+        if (!displayObject) {
+            return false
+        }
+
+        if (typeof displayObject.anchor?.set === 'function') {
+            displayObject.anchor.set(0)
+        }
+
+        if (typeof displayObject.pivot?.set !== 'function') {
+            return false
+        }
+
+        displayObject.pivot.set(pivotX, pivotY)
+        return true
+    }
+
+    setPlacedBuildingDisplayPivot(building) {
+        if (!building?.sprite) {
+            return false
+        }
+
+        return this.setBuildingDisplayPivot(
+            building.sprite,
+            building.size.x * BUILD_TILE_HALF_SIZE,
+            building.size.y * BUILD_TILE_HALF_SIZE
+        )
+    }
+
+    setFloatingBuildingDisplayPivot(building, rotationState = this.floatingBuilding.rotation) {
+        if (!building?.sprite || !this.floatingBuilding.sprite) {
+            return false
+        }
+
+        const normalizedRotation = ((rotationState % 4) + 4) % 4
+        const width = building.size.x * BUILD_TILE_HALF_SIZE * 2
+        const height = building.size.y * BUILD_TILE_HALF_SIZE * 2
+        let pivotX = BUILD_TILE_HALF_SIZE
+        let pivotY = BUILD_TILE_HALF_SIZE
+
+        if (normalizedRotation === 1) {
+            pivotY = height - BUILD_TILE_HALF_SIZE
+        } else if (normalizedRotation === 2) {
+            pivotX = width - BUILD_TILE_HALF_SIZE
+            pivotY = height - BUILD_TILE_HALF_SIZE
+        } else if (normalizedRotation === 3) {
+            pivotX = width - BUILD_TILE_HALF_SIZE
+        }
+
+        return this.setBuildingDisplayPivot(this.floatingBuilding.sprite, pivotX, pivotY)
+    }
+
+    updateFloatingBuildingPosition(position) {
+        if (!this.buildMode || !this.floatingBuilding.sprite || !position) {
+            return false
+        }
+
+        this.floatingBuilding.sprite.x = position.x
+        this.floatingBuilding.sprite.y = position.y
+        this.floatingBuilding.sprite.baseX = position.x
+        this.floatingBuilding.sprite.baseY = position.y
+        this.floatingBuilding.sprite.scale.set(this.currentScale)
+        return true
+    }
+
+    beginBuildingPlacement(building, position, previewSprite = null) {
+        const floatingPreviewSprite = previewSprite ?? building?.sprite
+        if (!building?.sprite || !floatingPreviewSprite) {
+            return false
+        }
+
+        if (this.floatingBuilding.sprite || this.floatingBuilding.building) {
+            this.clearFloatingBuilding({ destroySprite: true })
+        }
+
+        this.buildMode = true
+        this.floatingBuilding.building = building
+        this.floatingBuilding.sprite = floatingPreviewSprite
+        this.floatingBuilding.rotation = 0
+        this.floatingBuilding.building.sprite.rotation = 0
+        this.floatingBuilding.sprite.rotation = 0
+        this.floatingBuilding.sprite.zIndex = 5
+        this.setFloatingBuildingDisplayPivot(building, 0)
+        this.floatingBuilding.sprite.scale.set(this.currentScale)
+        this.tileContainer.addChild(this.floatingBuilding.sprite)
+        return this.updateFloatingBuildingPosition(position)
+    }
+
+    rotateFloatingBuilding() {
+        if (!this.buildMode || !this.floatingBuilding.building || !this.floatingBuilding.sprite) {
+            return false
+        }
+
+        this.floatingBuilding.rotation = (this.floatingBuilding.rotation + 1) % 4
+        this.floatingBuilding.sprite.rotation += Math.PI / 2
+        if (this.floatingBuilding.building.sprite !== this.floatingBuilding.sprite) {
+            this.floatingBuilding.building.sprite.rotation += Math.PI / 2
+        }
+        this.floatingBuilding.building.rotateMap()
+        this.setFloatingBuildingDisplayPivot(this.floatingBuilding.building, this.floatingBuilding.rotation)
+        this.floatingBuilding.sprite.scale.set(this.currentScale)
+        return true
     }
 
     formatBfsDebugValue(value) {
@@ -398,6 +501,10 @@ export class Game {
         tile.setBase('empty')
         tile.sprite.texture = PIXI.Texture.from('empty')
 
+        if (typeof cave.markAllBuildingFieldsDirty === 'function') {
+            cave.markAllBuildingFieldsDirty([tileKey])
+        }
+
         if (typeof cave.notifyMineableTilesChanged === 'function') {
             cave.notifyMineableTilesChanged([tileKey])
         }
@@ -526,6 +633,15 @@ export class Game {
             cave.revealCave()
         }
 
+        if (typeof cave.refreshReachableTiles === 'function') {
+            const reachabilityResult = cave.refreshReachableTiles()
+            if (reachabilityResult && typeof cave.markAllBuildingFieldsDirty === 'function') {
+                cave.markAllBuildingFieldsDirty([...changedKeys, ...reachabilityResult.changedKeys])
+            }
+        } else if (typeof cave.markAllBuildingFieldsDirty === 'function') {
+            cave.markAllBuildingFieldsDirty([...changedKeys])
+        }
+
         if (typeof cave.notifyMineableTilesChanged === 'function') {
             cave.notifyMineableTilesChanged([...changedKeys])
         }
@@ -554,12 +670,7 @@ export class Game {
         this.selected.claySelection.clear()
         this.movePath = false
         this.buildMode = false
-        this.floatingBuilding.building = null
-        if (this.floatingBuilding.sprite?.parent) {
-            this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
-        }
-        this.floatingBuilding.sprite = null
-        this.floatingBuilding.rotation = 0
+        this.clearFloatingBuilding({ destroySprite: true })
 
         if (this.selected.menu !== null) {
             this.selected.menu.close()
@@ -576,6 +687,28 @@ export class Game {
         
     }
 
+    clearFloatingBuilding({ destroySprite = false } = {}) {
+        const floatingSprite = this.floatingBuilding.sprite
+        const placementSprite = this.floatingBuilding.building?.sprite
+        const targetSprite = this.floatingBuilding.building?.targetBuilding?.sprite
+
+        if (destroySprite) {
+            destroyDisplayObject(floatingSprite)
+            if (placementSprite && placementSprite !== floatingSprite) {
+                destroyDisplayObject(placementSprite)
+            }
+            if (targetSprite && targetSprite !== floatingSprite && targetSprite !== placementSprite) {
+                destroyDisplayObject(targetSprite)
+            }
+        } else if (floatingSprite?.parent) {
+            floatingSprite.parent.removeChild(floatingSprite)
+        }
+
+        this.floatingBuilding.building = null
+        this.floatingBuilding.sprite = null
+        this.floatingBuilding.rotation = 0
+    }
+
     whenWallMined (interactionEvent, myTile, cave, emptyCoords)  {
 
         if (this.dragging || this.buildMode || cave.getTile(emptyCoords).getBase() != 'wall') {
@@ -588,7 +721,9 @@ export class Game {
 
         if (!this.dragging && !this.buildMode && this.movePath && myCave.getTile(coords).creatureFits()) {
 
-            let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
+            const destination = toCoords(coords)
+            const field = myCave.buildPointBfsField(destination)
+            let path = myCave.buildPathFromField(field, this.selected.object.location)
             if(!path) {
                 this.selected.setSelected(null)
                 return
@@ -611,9 +746,14 @@ export class Game {
 
         if(this.buildMode && !this.dragging) {
             if(myCave.canBuild(this.floatingBuilding.building,toCoords(coords))) {
-                this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
-                myCave.build(this.floatingBuilding.building,toCoords(coords),this.floatingBuilding.sprite)
+                const placementBuilding = this.floatingBuilding.building
+                if (this.floatingBuilding.sprite?.parent) {
+                    this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)
+                }
+                this.floatingBuilding.building = null
                 this.floatingBuilding.sprite = null
+                this.floatingBuilding.rotation = 0
+                myCave.build(placementBuilding,toCoords(coords),placementBuilding.sprite)
                 this.buildMode = false
                 this.cleanActive()
             }
@@ -647,12 +787,18 @@ export class Game {
             //     }
             // }
             
-            let path = myCave.bfsPath((this.selected.object.location.x+","+this.selected.object.location.y),coords)
+            const destination = toCoords(coords)
+            const field = myCave.buildPointBfsField(destination)
+            let path = myCave.buildPathFromField(field, this.selected.object.location)
             this.displayPath(path,this.floatingPaths)
         }
     }
 
     displayPath(path,pathSet) {
+        if (!Array.isArray(path) || path.length === 0) {
+            return false
+        }
+
         let myCoords = path.shift()
         let myDX = 0
         let myDY = 0
