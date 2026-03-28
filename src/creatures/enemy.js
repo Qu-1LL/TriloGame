@@ -57,7 +57,7 @@ export class Enemy extends Creature {
         }
 
         const hostiles = []
-        for (const creature of this.cave.creatures) {
+        for (const creature of this.cave.trilobites) {
             if (!creature || creature === this || !isTrackedTrilobite(creature)) {
                 continue
             }

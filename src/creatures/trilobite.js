@@ -506,10 +506,12 @@ export class Trilobite extends Creature {
         }
 
         const enemies = []
-        for (const creature of this.cave.creatures) {
-            if (isEnemyCreature(creature)) {
-                enemies.push(creature)
+        for (const creature of this.cave.enemies) {
+            if (!isEnemyCreature(creature)) {
+                continue
             }
+
+            enemies.push(creature)
         }
         return enemies
     }

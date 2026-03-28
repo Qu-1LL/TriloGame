@@ -11,10 +11,6 @@ import { Game } from './game.js'
 const app = new PIXI.Application();
 let gamePaused = true
 
-function isEnemyCreature(creature) {
-    return creature?.assignment === 'enemy' || creature?.constructor?.name === 'Enemy'
-}
-
 function formatInventory(inv) {
     if (!inv || inv.amount <= 0 || !inv.type) {
         return 'empty'
@@ -25,7 +21,7 @@ function formatInventory(inv) {
 function logTickState(cave, tickCount) {
     console.log(`=== Tick ${tickCount} ===`)
 
-    for (const creature of cave.creatures) {
+    for (const creature of cave.getCreatures()) {
         const inv = typeof creature.getInventory === 'function' ? creature.getInventory() : null
         const invText = formatInventory(inv)
         const creatureType = creature.constructor?.name ?? 'Creature'
@@ -65,7 +61,7 @@ function logStatsSnapshot(game, tickCount) {
 
 function getRandomReachableSpawnTile(cave) {
     const occupiedTileKeys = new Set()
-    for (const creature of cave.creatures) {
+    for (const creature of cave.getCreatures()) {
         if (Number.isFinite(creature?.location?.x) && Number.isFinite(creature?.location?.y)) {
             occupiedTileKeys.add(`${creature.location.x},${creature.location.y}`)
         }
@@ -317,21 +313,15 @@ async function preload()
         const tickStart = performance.now()
 
         if (game.danger) {
-            cave.rebuildBfsField('enemy')
+            cave.refreshBfsField('enemy')
         }
-        for (let creature of cave.creatures) {
-            if (isEnemyCreature(creature)) {
-                continue
-            }
+        for (let creature of cave.trilobites) {
             creature.move()
         }
 
         if (game.danger) {
-            cave.rebuildBfsField('colony')
-            for (let creature of cave.creatures) {
-                if (!isEnemyCreature(creature)) {
-                    continue
-                }
+            cave.refreshBfsField('colony')
+            for (let creature of cave.enemies) {
                 creature.move()
             }
         }
@@ -412,6 +402,11 @@ async function preload()
     //event listeners relative to full game
 
     window.addEventListener("wheel", (event) => {
+        if (game.menu?.handleWheel?.(event)) {
+            event.preventDefault()
+            return
+        }
+
         if (game.dragging) {
             return
         }
@@ -528,7 +523,7 @@ async function preload()
             game.refreshBfsFieldDebug(cave)
             logTickState(cave, tickCount)
         } else if (e.key ==='Escape') {
-            game.cleanActive()
+            game.cleanActive({ closeMenu: true })
         } else if (e.key === 'r') {
             if (game.buildMode) {
                 game.rotateFloatingBuilding()

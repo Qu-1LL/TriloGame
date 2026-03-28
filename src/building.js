@@ -1,4 +1,5 @@
 import { Ore } from './ores.js'
+import { BfsField } from './bfs-field.js'
 
 export const BUILD_TILE_SIZE = 80
 export const BUILD_TILE_HALF_SIZE = BUILD_TILE_SIZE / 2
@@ -141,9 +142,11 @@ export class Building {
         this.health = 100
         this.maxHealth = this.health
         this.cave = null
-        this.bfsField = new Map()
-        this.updatedField = false
-        this.bfsFieldUpdatedTiles = new Set()
+        this.bfsField = new BfsField({
+            name: this.name,
+            type: 'building',
+            ownerBuilding: this
+        })
         this.recipe = null
         this.selectable = true
     }
@@ -192,6 +195,10 @@ export class Building {
         return normalizeRecipe(this.recipe)
     }
 
+    getBfsFieldObject() {
+        return this.bfsField
+    }
+
     canBeSelected() {
         return this.selectable !== false
     }
@@ -204,27 +211,11 @@ export class Building {
     }
 
     markBfsFieldDirty(tileKeys = []) {
-        this.updatedField = false
-
-        if (!Array.isArray(tileKeys)) {
-            return this.updatedField
-        }
-
-        for (const tileKey of tileKeys) {
-            const normalizedTileKey = normalizeTileKey(tileKey)
-            if (normalizedTileKey === null) {
-                continue
-            }
-            this.bfsFieldUpdatedTiles.add(normalizedTileKey)
-        }
-
-        return this.updatedField
+        return this.bfsField?.markDirty({ tileKeys }) ?? false
     }
 
     clearBfsFieldDirtyState() {
-        this.updatedField = true
-        this.bfsFieldUpdatedTiles.clear()
-        return this.updatedField
+        return this.bfsField?.clearUpdates() ?? false
     }
 
     getHealth() {

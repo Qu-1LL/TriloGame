@@ -18,6 +18,7 @@ export class Game {
         this.app = app
         this.currentScale = 1
         this.eventListeners = new Map()
+        this.cave = null
 
         //event variables
 
@@ -65,8 +66,8 @@ export class Game {
         } 
 
         this.bfsFields = {
-            enemy: new Map(),
-            colony: new Map()
+            enemy: null,
+            colony: null
         }
         this.activeBfsDebugField = null
         this.bfsDebugLabels = new Map()
@@ -92,9 +93,10 @@ export class Game {
             new Factory(Radar,this)
         ]
 
+        this.menu = new Menu(app, this, this.uiContainer)
 
         this.selected = new class {
-            constructor(tileContainer,uiContainer,game) {
+            constructor(tileContainer,game) {
                 this.object = null
                 this.selection = PIXI.Sprite.from('selected')
                 this.selection.x = 0
@@ -107,75 +109,93 @@ export class Game {
 
                 this.claySelection = new Set()
 
-                this.uiContainer = uiContainer
                 this.tileContainer = tileContainer
                 tileContainer.addChild(this.selection)
-                this.menu = null
                 this.game = game
                 this.selectedPaths = new Set()
             }
+
+            clearVisuals() {
+                this.game.clearFloatingPathPreview()
+                this.selection.visible = false
+
+                for (const sprite of this.claySelection) {
+                    if (sprite.parent) {
+                        sprite.parent.removeChild(sprite)
+                    }
+                    sprite.destroy()
+                }
+                this.claySelection.clear()
+
+                for (const sprite of this.selectedPaths) {
+                    if (sprite.parent) {
+                        sprite.parent.removeChild(sprite)
+                    }
+                    sprite.destroy()
+                }
+                this.selectedPaths.clear()
+            }
+
             setSelected(s) {
-                
+                this.clearVisuals()
+
                 if (s == null) {
-                    this.object = s
+                    this.object = null
+                    this.game.menu.setSelectedObject(null)
                     return
-                } else {
-                    this.game.cleanActive()
-                    this.object = s
+                }
 
-                    this.menu = new Menu(app,s,this.uiContainer)
-                    this.menu.open()
+                this.object = s
+                this.game.menu.setSelectedObject(s)
+                this.game.menu.openPanel()
+                this.centerSelection()
 
-                    this.centerSelection()
+                if (this.object instanceof Creature) {
+                    this.selection.x = s.sprite.position.x
+                    this.selection.y = s.sprite.position.y
+                    this.selection.baseX = s.sprite.baseX
+                    this.selection.baseY = s.sprite.baseY
+                    this.selection.visible = true
+                    const myPath = this.object.getQueuedPathPreview()
+                    if (myPath.length > 1) {
+                        this.game.displayPath(myPath,this.selectedPaths)
+                    }
+                } else if (this.object instanceof Building) {
+                    for (let tile of this.object.tileArray) {
+                        for (let n of tile.getNeighbors()) {
+                            if (!this.object.tileArray.includes(n)) {
+                                let myBorder = PIXI.Sprite.from('selectededge')
+                                myBorder.anchor.set(0.5, 0)
+                                this.claySelection.add(myBorder)
+                                this.tileContainer.addChild(myBorder)
 
-                    if (this.object instanceof Creature) {
-                        this.selection.x = s.sprite.position.x
-                        this.selection.y = s.sprite.position.y
-                        this.selection.baseX = s.sprite.baseX
-                        this.selection.baseY = s.sprite.baseY
-                        this.selection.visible = true
-                        const myPath = this.object.getQueuedPathPreview()
-                        if (myPath.length > 1) {
-                            this.game.displayPath(myPath,this.selectedPaths)
-                        }
-                    } else if (this.object instanceof Building) {
-                        for (let tile of this.object.tileArray) {
-                            for (let n of tile.getNeighbors()) {
-                                if (!this.object.tileArray.includes(n)) {
-                                    let myBorder = PIXI.Sprite.from('selectededge')
-                                    myBorder.anchor.set(0.5, 0)
-                                    this.claySelection.add(myBorder)
-                                    this.tileContainer.addChild(myBorder)
+                                let nCoords = toCoords(n.key)
+                                let tileCoords = toCoords(tile.key)
+                                let dx = nCoords.x - tileCoords.x
+                                let dy = nCoords.y - tileCoords.y
 
-                                    let nCoords = toCoords(n.key)
-                                    let tileCoords = toCoords(tile.key)
-                                    let dx = nCoords.x - tileCoords.x
-                                    let dy = nCoords.y - tileCoords.y
-
-                                    if (dy == 0) {
-                                        myBorder.rotation = Math.PI / 2
-                                    }
-
-                                    if (dy < 0 || dx < 0) {
-                                        myBorder.anchor.set(0.5,1)
-                                    }
-
-                                    myBorder.x = tile.sprite.position.x + (dx * 40 * this.game.currentScale)
-                                    myBorder.y = tile.sprite.position.y + (dy * 40 * this.game.currentScale)
-                                    myBorder.baseX = tile.sprite.baseX + (dx * 40)
-                                    myBorder.baseY = tile.sprite.baseY + (dy * 40)
-                                    myBorder.scale.set(this.game.currentScale)
-                                    myBorder.visible = true
-                                    myBorder.zIndex = 3
-                                    
+                                if (dy == 0) {
+                                    myBorder.rotation = Math.PI / 2
                                 }
+
+                                if (dy < 0 || dx < 0) {
+                                    myBorder.anchor.set(0.5,1)
+                                }
+
+                                myBorder.x = tile.sprite.position.x + (dx * 40 * this.game.currentScale)
+                                myBorder.y = tile.sprite.position.y + (dy * 40 * this.game.currentScale)
+                                myBorder.baseX = tile.sprite.baseX + (dx * 40)
+                                myBorder.baseY = tile.sprite.baseY + (dy * 40)
+                                myBorder.scale.set(this.game.currentScale)
+                                myBorder.visible = true
+                                myBorder.zIndex = 3
                             }
                         }
                     }
                 }
             }
             centerSelection() {
-                let menuOffset = this.menu.block.width / 2
+                let menuOffset = this.game.menu.getOpenPanelWidth() / 2
 
                 let dx = (this.object.location.x * 80) - (this.game.totalXDelt - (menuOffset * (1 / this.game.currentScale)))
                 let dy = (this.object.location.y * 80) - this.game.totalYDelt
@@ -188,7 +208,18 @@ export class Game {
                     child.y = child.position.y - (dy * this.game.currentScale)
                 }
             }
-        }(this.tileContainer,this.uiContainer,this)
+        }(this.tileContainer,this)
+    }
+
+    clearFloatingPathPreview() {
+        for (const sprite of this.floatingPaths) {
+            if (sprite.parent) {
+                sprite.parent.removeChild(sprite)
+            }
+            sprite.destroy()
+        }
+
+        this.floatingPaths.clear()
     }
 
     syncWorldSpriteTransforms(extraScreenDx = 0, extraScreenDy = 0, { skipFloatingBuildingOffset = false } = {}) {
@@ -332,8 +363,8 @@ export class Game {
             return false
         }
 
-        if (rebuild && typeof cave.rebuildBfsField === 'function') {
-            cave.rebuildBfsField(fieldName)
+        if (rebuild && typeof cave.refreshBfsField === 'function') {
+            cave.refreshBfsField(fieldName)
         }
 
         const field = typeof cave.getBfsField === 'function' ? cave.getBfsField(fieldName) : null
@@ -654,37 +685,18 @@ export class Game {
         return true
     }
 
-    cleanActive() {
+    cleanActive({ closeMenu = false } = {}) {
 
         this.clearBfsFieldDebug()
-
-        for (let sprite of this.floatingPaths) {
-            sprite.parent.removeChild(sprite);
-            sprite.destroy()
-        }
-        for (let sprite of this.selected.claySelection) {
-            sprite.parent.removeChild(sprite);
-            sprite.destroy()
-        }
-        this.floatingPaths.clear()
-        this.selected.claySelection.clear()
+        this.clearFloatingPathPreview()
         this.movePath = false
         this.buildMode = false
         this.clearFloatingBuilding({ destroySprite: true })
-
-        if (this.selected.menu !== null) {
-            this.selected.menu.close()
-            this.selected.menu = null
-
-        }
-        this.selected.selection.visible = false
-        for (let sprite of this.selected.selectedPaths) {
-            sprite.parent.removeChild(sprite)
-            sprite.destroy()
-        }
-        this.selected.selectedPaths.clear()
         this.selected.setSelected(null)
-        
+
+        if (closeMenu) {
+            this.menu.closePanel()
+        }
     }
 
     clearFloatingBuilding({ destroySprite = false } = {}) {
@@ -764,21 +776,17 @@ export class Game {
     emptyTileHover(coords,myCave,event) {
 
         let pos = event.data.global
+        const pointerCoveredByUi = this.menu?.coversScreenPoint?.(pos) ?? false
 
         if (!this.dragging && 
             !this.buildMode &&
             this.movePath &&
-            pos.x < (
-                this.app.screen.width - this.selected.menu.block.width
-            ) && (
+            this.selected.object &&
+            !pointerCoveredByUi && (
                 myCave.getTile(coords).creatureFits()
             )
         ) {
-            for (let sprite of this.floatingPaths) {
-                sprite.parent.removeChild(sprite)
-                sprite.destroy()
-            }
-            this.floatingPaths.clear()
+            this.clearFloatingPathPreview()
 
             // for (let ore in Ore.getOres()) {
             //     if (myCave.getTile(coords).getBase() === ore.name) {
@@ -846,11 +854,7 @@ export class Game {
 
     emptyTileHoverExit() {
         if (!this.dragging && !this.buildMode && this.selected.object) {
-            for (let sprite of this.floatingPaths) {
-                sprite.parent.removeChild(sprite)
-                sprite.destroy()
-            }
-            this.floatingPaths.clear()
+            this.clearFloatingPathPreview()
         }
     }
 
