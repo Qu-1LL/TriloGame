@@ -8,8 +8,6 @@ import { AlgaeFarm } from './buildings/algae-farm.js'
 import { Barracks } from './buildings/barracks.js'
 import { MiningPost } from './buildings/mining-post.js'
 import { Radar } from './buildings/radar.js'
-import { Smith } from './buildings/smith.js'
-import { Storage } from './buildings/storage.js'
 import { Stats } from './stats.js'
 
 export class Game {
@@ -87,8 +85,6 @@ export class Game {
         this.unlockedBuildings = [
             new Factory(AlgaeFarm,this),
             new Factory(Barracks,this),
-            new Factory(Storage,this),
-            new Factory(Smith,this),
             new Factory(MiningPost,this),
             new Factory(Radar,this)
         ]
@@ -268,10 +264,12 @@ export class Game {
             return false
         }
 
+        const pivotBaseSize = building.getDisplayPivotBaseSize?.() ?? building.size
+
         return this.setBuildingDisplayPivot(
             building.sprite,
-            building.size.x * BUILD_TILE_HALF_SIZE,
-            building.size.y * BUILD_TILE_HALF_SIZE
+            pivotBaseSize.x * BUILD_TILE_HALF_SIZE,
+            pivotBaseSize.y * BUILD_TILE_HALF_SIZE
         )
     }
 
@@ -281,8 +279,11 @@ export class Game {
         }
 
         const normalizedRotation = ((rotationState % 4) + 4) % 4
-        const width = building.size.x * BUILD_TILE_HALF_SIZE * 2
-        const height = building.size.y * BUILD_TILE_HALF_SIZE * 2
+        const pivotBaseSize = building.targetBuilding?.getDisplayPivotBaseSize?.()
+            ?? building.getDisplayPivotBaseSize?.()
+            ?? building.size
+        const width = pivotBaseSize.x * BUILD_TILE_HALF_SIZE * 2
+        const height = pivotBaseSize.y * BUILD_TILE_HALF_SIZE * 2
         let pivotX = BUILD_TILE_HALF_SIZE
         let pivotY = BUILD_TILE_HALF_SIZE
 
@@ -325,7 +326,8 @@ export class Game {
         this.floatingBuilding.building = building
         this.floatingBuilding.sprite = floatingPreviewSprite
         this.floatingBuilding.rotation = 0
-        this.floatingBuilding.building.sprite.rotation = 0
+        this.floatingBuilding.building.setDisplayRotationTurns?.(0)
+        this.floatingBuilding.building.targetBuilding?.setDisplayRotationTurns?.(0)
         this.floatingBuilding.sprite.rotation = 0
         this.floatingBuilding.sprite.zIndex = 5
         this.setFloatingBuildingDisplayPivot(building, 0)
@@ -340,11 +342,9 @@ export class Game {
         }
 
         this.floatingBuilding.rotation = (this.floatingBuilding.rotation + 1) % 4
-        this.floatingBuilding.sprite.rotation += Math.PI / 2
-        if (this.floatingBuilding.building.sprite !== this.floatingBuilding.sprite) {
-            this.floatingBuilding.building.sprite.rotation += Math.PI / 2
-        }
         this.floatingBuilding.building.rotateMap()
+        this.floatingBuilding.building.setDisplayRotationTurns?.(this.floatingBuilding.rotation)
+        this.floatingBuilding.building.targetBuilding?.setDisplayRotationTurns?.(this.floatingBuilding.rotation)
         this.setFloatingBuildingDisplayPivot(this.floatingBuilding.building, this.floatingBuilding.rotation)
         this.floatingBuilding.sprite.scale.set(this.currentScale)
         return true
@@ -442,6 +442,40 @@ export class Game {
         }
 
         this.syncWorldSpriteTransforms(0, 0, { skipFloatingBuildingOffset })
+    }
+
+    handleViewportResize(width = this.app.screen.width, height = this.app.screen.height) {
+        const nextWidth = Number.isFinite(width) ? width : this.app.screen.width
+        const nextHeight = Number.isFinite(height) ? height : this.app.screen.height
+        const nextMidX = nextWidth / 2
+        const nextMidY = nextHeight / 2
+        const scale = this.currentScale || 1
+
+        for (const child of this.tileContainer.children) {
+            if (
+                !Number.isFinite(child?.x) ||
+                !Number.isFinite(child?.y) ||
+                !Number.isFinite(child?.baseX) ||
+                !Number.isFinite(child?.baseY)
+            ) {
+                continue
+            }
+
+            // Preserve the current on-screen world layout while the viewport center changes.
+            child.baseX = nextMidX + ((child.x - nextMidX) / scale)
+            child.baseY = nextMidY + ((child.y - nextMidY) / scale)
+        }
+
+        this.midx = nextMidX
+        this.midy = nextMidY
+        this.syncWorldSpriteTransforms()
+
+        if (this.cave) {
+            this.refreshBfsFieldDebug(this.cave, { rebuild: false })
+        }
+
+        this.menu.refresh()
+        return true
     }
 
     on(eventName, listener) {
@@ -551,10 +585,28 @@ export class Game {
 
         const myTile = tile.sprite
         const changedKeys = new Set([emptyCoords])
+        const shouldProcessAdjacentCaveTile = (adjacentTile) => {
+            if (!adjacentTile || adjacentTile.getBase() === 'wall') {
+                return false
+            }
+
+            // Radar can reveal tiles before the queen can actually reach them,
+            // so we need to treat "visible but still unreachable" as unopened space.
+            if (adjacentTile.sprite?.visible === false) {
+                return true
+            }
+
+            return typeof cave.isTileReachable === 'function'
+                ? !cave.isTileReachable(adjacentTile)
+                : false
+        }
 
         myTile.texture = PIXI.Texture.from('empty')
         tile.setBase('empty')
         tile.creatureCanFit = true
+        if (typeof cave.revealTile === 'function' && cave.revealTile(tile) > 0) {
+            changedKeys.add(emptyCoords)
+        }
 
         myTile.on("mouseup", () => {
             this.emptyTileClicked(emptyCoords,cave)
@@ -592,7 +644,7 @@ export class Game {
                 continue
             }
 
-            if (n.sprite?.visible === false) {
+            if (shouldProcessAdjacentCaveTile(n)) {
                 shouldRevealCave = true
             }
         }
@@ -612,7 +664,7 @@ export class Game {
                     continue
                 }
 
-                if (wallTile.sprite?.visible === false) {
+                if (shouldProcessAdjacentCaveTile(wallTile)) {
                     shouldRevealCave = true
                 }
                 continue
@@ -757,7 +809,7 @@ export class Game {
         }
 
         if(this.buildMode && !this.dragging) {
-            if(myCave.canBuild(this.floatingBuilding.building,toCoords(coords))) {
+            if(myCave.canBuild(this.floatingBuilding.building,toCoords(coords), { preserveReachability: true })) {
                 const placementBuilding = this.floatingBuilding.building
                 if (this.floatingBuilding.sprite?.parent) {
                     this.floatingBuilding.sprite.parent.removeChild(this.floatingBuilding.sprite)

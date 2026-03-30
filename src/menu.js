@@ -4,6 +4,7 @@ import { Scaffolding } from './buildings/scaffolding.js'
 
 const TAB_BUILDINGS = 'buildings'
 const TAB_ASSIGNMENTS = 'assignments'
+const TAB_SELECTED = 'selected'
 
 export class Menu {
 
@@ -93,14 +94,21 @@ export class Menu {
         this.refresh()
     }
 
+    clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value))
+    }
+
     getLayoutMetrics() {
-        const screenPadding = 16
-        const buttonWidth = 132
-        const buttonHeight = 44
-        const panelWidth = Math.max(460, Math.min(560, Math.floor(this.app.screen.width * 0.36)))
+        const layoutScale = this.clamp(this.app.screen.height / 920, 0.82, 1.16)
+        const screenPadding = Math.round(16 * layoutScale)
+        const buttonWidth = Math.round(132 * layoutScale)
+        const buttonHeight = Math.round(44 * layoutScale)
+        const availableWidth = Math.max(300, this.app.screen.width - (screenPadding * 2))
+        const panelWidth = Math.min(520, availableWidth)
         const panelHeight = this.app.screen.height
 
         return {
+            layoutScale,
             screenPadding,
             buttonWidth,
             buttonHeight,
@@ -110,8 +118,10 @@ export class Menu {
             panelHeight,
             panelX: this.app.screen.width - panelWidth,
             panelY: 0,
-            contentPadding: 18,
-            tabHeight: 42
+            contentPadding: Math.round(18 * layoutScale),
+            contentInset: Math.round(16 * layoutScale),
+            tabHeight: Math.round(42 * layoutScale),
+            headerHeight: Math.round(122 * layoutScale)
         }
     }
 
@@ -168,10 +178,11 @@ export class Menu {
     }
 
     openPanel({ tab = null } = {}) {
-        if (tab === TAB_BUILDINGS || tab === TAB_ASSIGNMENTS) {
+        if (tab === TAB_BUILDINGS || tab === TAB_ASSIGNMENTS || tab === TAB_SELECTED) {
             this.activeTab = tab
         }
 
+        this.normalizeActiveTab()
         this.panelOpen = true
         this.refresh()
         return true
@@ -193,8 +204,35 @@ export class Menu {
 
     setSelectedObject(object) {
         this.selectedObject = object ?? null
+        this.normalizeActiveTab()
         this.refresh()
         return true
+    }
+
+    hasSelectedTab() {
+        return this.selectedObject !== null
+    }
+
+    getAvailableTabs() {
+        const tabs = [
+            { key: TAB_BUILDINGS, label: 'Buildings' },
+            { key: TAB_ASSIGNMENTS, label: 'Assignments' }
+        ]
+
+        if (this.hasSelectedTab()) {
+            tabs.push({ key: TAB_SELECTED, label: 'Selected' })
+        }
+
+        return tabs
+    }
+
+    normalizeActiveTab() {
+        const availableTabKeys = new Set(this.getAvailableTabs().map((tab) => tab.key))
+        if (!availableTabKeys.has(this.activeTab)) {
+            this.activeTab = TAB_BUILDINGS
+        }
+
+        return this.activeTab
     }
 
     handleWheel(event) {
@@ -214,7 +252,7 @@ export class Menu {
 
         const delta = Math.max(-90, Math.min(90, event.deltaY))
         for (const area of this.scrollAreas) {
-            const viewport = area.viewport
+            const viewport = area.hitArea ?? area.viewport
             const isInsideArea = (
                 position.x >= viewport.x &&
                 position.x <= (viewport.x + viewport.width) &&
@@ -292,6 +330,11 @@ export class Menu {
                 default: { fillColor: 0x183549, borderColor: 0x6ea3b8, textStyle: this.textStyles.buttonDark },
                 hover: { fillColor: 0x21465d, borderColor: 0x88bfd2, textStyle: this.textStyles.buttonDark },
                 pressed: { fillColor: 0x123041, borderColor: 0x5e93a8, textStyle: this.textStyles.buttonDark }
+            },
+            danger: {
+                default: { fillColor: 0xa34a43, borderColor: 0xf2b0aa, textStyle: this.textStyles.buttonDark },
+                hover: { fillColor: 0xb8564f, borderColor: 0xffc3bc, textStyle: this.textStyles.buttonDark },
+                pressed: { fillColor: 0x913e38, borderColor: 0xe2a19a, textStyle: this.textStyles.buttonDark }
             },
             card: {
                 default: { fillColor: 0x102636, borderColor: 0x36586b, textStyle: this.textStyles.buttonDark },
@@ -657,12 +700,10 @@ export class Menu {
     }
 
     renderTabs(panel, metrics) {
-        const tabs = [
-            { key: TAB_BUILDINGS, label: 'Buildings' },
-            { key: TAB_ASSIGNMENTS, label: 'Assignments' }
-        ]
-        const tabGap = 12
-        const tabWidth = Math.min(200, ((metrics.panelWidth - (metrics.contentPadding * 2)) - tabGap) / 2)
+        const tabs = this.getAvailableTabs()
+        const tabGap = Math.round(12 * metrics.layoutScale)
+        const totalGapWidth = tabGap * Math.max(0, tabs.length - 1)
+        const tabWidth = ((metrics.panelWidth - (metrics.contentPadding * 2)) - totalGapWidth) / tabs.length
         let tabX = metrics.contentPadding
 
         for (const tab of tabs) {
@@ -685,16 +726,115 @@ export class Menu {
         }
     }
 
+    deleteSelectedObject() {
+        const target = this.selectedObject
+        if (!target || typeof target.removeFromGame !== 'function') {
+            return false
+        }
+
+        try {
+            return target.removeFromGame('menuDelete')
+        } catch (error) {
+            console.error(error)
+            return false
+        }
+    }
+
+    renderSelectedTab(panel, bounds) {
+        const layoutScale = this.clamp(bounds.height / 760, 0.84, 1.18)
+        const title = this.selectedObject?.name ?? 'No Selection'
+        const objectType = this.selectedObject instanceof Creature ? 'Trilobite' : 'Building'
+        const assignmentText = this.selectedObject instanceof Creature
+            ? `Assignment: ${this.selectedObject.assignment ?? 'unassigned'}`
+            : `Type: ${this.selectedObject?.constructor?.name ?? objectType}`
+        const selectedDescription = this.selectedObject instanceof Creature
+            ? 'Delete this trilobite from the colony immediately.'
+            : 'Delete this building from the cave immediately.'
+
+        const card = new PIXI.Graphics()
+        this.drawRoundedRect(card, bounds.width, bounds.height, {
+            fillColor: 0x122534,
+            fillAlpha: 1,
+            borderColor: 0x4a7284,
+            borderWidth: 2,
+            borderAlpha: 1,
+            radius: 18
+        })
+        card.x = bounds.x
+        card.y = bounds.y
+        panel.addChild(card)
+
+        const sectionLabel = new PIXI.Text({
+            text: 'SELECTED OBJECT',
+            style: this.textStyles.sectionLabel
+        })
+        sectionLabel.x = bounds.x + Math.round(16 * layoutScale)
+        sectionLabel.y = bounds.y + Math.round(14 * layoutScale)
+        panel.addChild(sectionLabel)
+
+        const selectedTitle = new PIXI.Text({
+            text: title,
+            style: this.textStyles.body
+        })
+        selectedTitle.x = bounds.x + Math.round(16 * layoutScale)
+        selectedTitle.y = bounds.y + Math.round(42 * layoutScale)
+        panel.addChild(selectedTitle)
+
+        const selectedMeta = new PIXI.Text({
+            text: `${objectType}\n${assignmentText}`,
+            style: new PIXI.TextStyle({
+                fontFamily: this.textStyles.meta.fontFamily,
+                fontSize: this.textStyles.meta.fontSize,
+                fill: this.textStyles.meta.fill,
+                lineHeight: 20
+            })
+        })
+        selectedMeta.x = bounds.x + Math.round(16 * layoutScale)
+        selectedMeta.y = bounds.y + Math.round(72 * layoutScale)
+        panel.addChild(selectedMeta)
+
+        const selectedBody = this.createBodyText(
+            `${selectedDescription}\nThis uses the normal in-game removal flow and clears the current selection afterward.`,
+            bounds.width - Math.round(32 * layoutScale)
+        )
+        selectedBody.x = bounds.x + Math.round(16 * layoutScale)
+        selectedBody.y = bounds.y + Math.round(128 * layoutScale)
+        panel.addChild(selectedBody)
+
+        const buttonWidth = Math.min(
+            Math.round(240 * layoutScale),
+            bounds.width - Math.round(32 * layoutScale)
+        )
+        const buttonHeight = Math.round(50 * layoutScale)
+        const deleteButton = this.createButton({
+            label: this.selectedObject instanceof Creature ? 'Delete Trilobite' : 'Delete Building',
+            x: bounds.x + Math.round(16 * layoutScale),
+            y: bounds.y + bounds.height - buttonHeight - Math.round(18 * layoutScale),
+            width: buttonWidth,
+            height: buttonHeight,
+            variant: 'danger',
+            onClick: () => this.deleteSelectedObject()
+        })
+        panel.addChild(deleteButton)
+    }
+
     renderBuildingsTab(panel, bounds) {
         const buildableOptions = this.getBuildableOptions()
         this.syncBuildOptionSelection(buildableOptions)
 
-        const sectionGap = 16
-        let previewHeight = Math.min(280, Math.max(190, Math.floor(bounds.height * 0.36)))
+        const layoutScale = this.clamp(bounds.height / 760, 0.84, 1.18)
+        const sectionGap = Math.round(16 * layoutScale)
+        let previewHeight = Math.min(
+            Math.round(300 * layoutScale),
+            Math.max(Math.round(190 * layoutScale), Math.floor(bounds.height * 0.34))
+        )
         let gridHeight = bounds.height - previewHeight - sectionGap
 
-        if (gridHeight < 150) {
-            previewHeight = Math.max(120, previewHeight - (150 - gridHeight))
+        if (gridHeight < Math.round(150 * layoutScale)) {
+            previewHeight = Math.max(
+                Math.round(132 * layoutScale),
+                previewHeight - (Math.round(150 * layoutScale) - gridHeight)
+            )
             gridHeight = bounds.height - previewHeight - sectionGap
         }
 
@@ -715,28 +855,28 @@ export class Menu {
             text: 'BUILDING PREVIEW',
             style: this.textStyles.sectionLabel
         })
-        previewLabel.x = bounds.x + 16
-        previewLabel.y = bounds.y + 14
+        previewLabel.x = bounds.x + Math.round(16 * layoutScale)
+        previewLabel.y = bounds.y + Math.round(14 * layoutScale)
         panel.addChild(previewLabel)
 
         const previewTitle = new PIXI.Text({
             text: '',
             style: this.textStyles.body
         })
-        previewTitle.x = bounds.x + 16
-        previewTitle.y = bounds.y + 40
+        previewTitle.x = bounds.x + Math.round(16 * layoutScale)
+        previewTitle.y = bounds.y + Math.round(40 * layoutScale)
         panel.addChild(previewTitle)
 
         const previewSize = new PIXI.Text({
             text: '',
             style: this.textStyles.meta
         })
-        previewSize.x = bounds.x + 16
-        previewSize.y = bounds.y + 66
+        previewSize.x = bounds.x + Math.round(16 * layoutScale)
+        previewSize.y = bounds.y + Math.round(66 * layoutScale)
         panel.addChild(previewSize)
 
-        const previewInnerPadding = 16
-        const previewColumnGap = 18
+        const previewInnerPadding = Math.round(16 * layoutScale)
+        const previewColumnGap = Math.round(18 * layoutScale)
         const previewTextWidth = Math.floor((bounds.width - (previewInnerPadding * 2) - previewColumnGap) / 2)
         const imageFrameWidth = bounds.width - (previewInnerPadding * 2) - previewColumnGap - previewTextWidth
         const imageFrameHeight = previewHeight - (previewInnerPadding * 2)
@@ -769,7 +909,7 @@ export class Menu {
 
         const previewDescription = this.createBodyText('', previewTextWidth)
         previewDescription.x = bounds.x + previewInnerPadding
-        previewDescription.y = bounds.y + 104
+        previewDescription.y = previewSize.y + previewSize.height + Math.round(14 * layoutScale)
         panel.addChild(previewDescription)
 
         this.buildPreview = {
@@ -801,8 +941,8 @@ export class Menu {
             text: 'BUILDINGS',
             style: this.textStyles.sectionLabel
         })
-        gridLabel.x = bounds.x + 16
-        gridLabel.y = gridFrameY + 14
+        gridLabel.x = bounds.x + Math.round(16 * layoutScale)
+        gridLabel.y = gridFrameY + Math.round(14 * layoutScale)
         panel.addChild(gridLabel)
 
         const gridIntro = this.createBodyText(
@@ -810,15 +950,17 @@ export class Menu {
             bounds.width - 32,
             this.textStyles.meta
         )
-        gridIntro.x = bounds.x + 16
-        gridIntro.y = gridFrameY + 34
+        gridIntro.x = bounds.x + Math.round(16 * layoutScale)
+        gridIntro.y = gridLabel.y + gridLabel.height + Math.round(4 * layoutScale)
         panel.addChild(gridIntro)
 
+        const gridPadding = Math.round(14 * layoutScale)
+        const viewportTop = gridIntro.y + gridIntro.height + Math.round(10 * layoutScale)
         const viewport = {
-            x: bounds.x + 14,
-            y: gridFrameY + 84,
-            width: bounds.width - 28,
-            height: Math.max(88, gridHeight - 98)
+            x: bounds.x + gridPadding,
+            y: viewportTop,
+            width: bounds.width - (gridPadding * 2),
+            height: Math.max(Math.round(92 * layoutScale), (gridFrameY + gridHeight) - viewportTop - gridPadding)
         }
 
         const gridMask = new PIXI.Graphics()
@@ -846,6 +988,12 @@ export class Menu {
             emptyState.y = 4
             gridContent.addChild(emptyState)
             this.buildGrid = {
+                hitArea: {
+                    x: bounds.x,
+                    y: gridFrameY,
+                    width: bounds.width,
+                    height: gridHeight
+                },
                 viewport,
                 content: gridContent,
                 maxScroll: 0,
@@ -860,11 +1008,18 @@ export class Menu {
         }
 
         const columns = 4
-        const columnGap = 10
-        const rowGap = 10
-        const cardWidth = (viewport.width - (columnGap * (columns - 1)) - 10) / columns
-        const cardHeight = 112
-        const usableSpriteHeight = 58
+        const columnGap = Math.round(10 * layoutScale)
+        const rowGap = Math.round(10 * layoutScale)
+        const scrollbarGutter = 10
+        const cardSize = Math.floor((viewport.width - scrollbarGutter - (columnGap * (columns - 1))) / columns)
+        const cardWidth = Math.max(72, cardSize)
+        const cardHeight = cardWidth
+        const nameTop = Math.round(cardHeight * 0.08)
+        const iconInset = Math.max(8, Math.round(cardWidth * 0.08))
+        const titleHeight = Math.max(28, Math.round(cardHeight * 0.26))
+        const usableSpriteHeight = Math.max(34, cardHeight - titleHeight - (iconInset * 3))
+        const iconFrameY = nameTop + titleHeight
+        const iconFrameHeight = Math.max(40, usableSpriteHeight + Math.round(8 * layoutScale))
 
         buildableOptions.forEach((factory, index) => {
             const column = index % columns
@@ -921,10 +1076,10 @@ export class Menu {
             })
             name.anchor.set(0.5, 0)
             name.x = cardWidth / 2
-            name.y = 8
+            name.y = nameTop
 
             const iconFrame = new PIXI.Graphics()
-            this.drawRoundedRect(iconFrame, cardWidth - 20, usableSpriteHeight + 8, {
+            this.drawRoundedRect(iconFrame, cardWidth - (iconInset * 2), iconFrameHeight, {
                 fillColor: 0x0b1721,
                 fillAlpha: 0.95,
                 borderColor: 0x3f6275,
@@ -932,12 +1087,12 @@ export class Menu {
                 borderAlpha: 1,
                 radius: 12
             })
-            iconFrame.x = 10
-            iconFrame.y = cardHeight - usableSpriteHeight - 18
+            iconFrame.x = iconInset
+            iconFrame.y = iconFrameY
 
-            const icon = this.createScaledSprite(factory.sprite?.texture, cardWidth - 28, usableSpriteHeight)
+            const icon = this.createScaledSprite(factory.sprite?.texture, cardWidth - ((iconInset + 4) * 2), usableSpriteHeight)
             icon.x = cardWidth / 2
-            icon.y = iconFrame.y + ((usableSpriteHeight + 8) / 2)
+            icon.y = iconFrame.y + (iconFrameHeight / 2)
 
             card.addChild(background)
             card.addChild(name)
@@ -983,6 +1138,12 @@ export class Menu {
         }
 
         this.buildGrid = {
+            hitArea: {
+                x: bounds.x,
+                y: gridFrameY,
+                width: bounds.width,
+                height: gridHeight
+            },
             viewport,
             content: gridContent,
             maxScroll,
@@ -995,14 +1156,13 @@ export class Menu {
         this.buildGrid = this.registerScrollArea(this.buildGrid)
     }
 
-    renderAssignmentTabs(panel, bounds) {
+    renderAssignmentTabs(panel, bounds, { tabHeight = 38, tabGap = 8 } = {}) {
         const filters = [
             { key: 'miner', label: 'Miner' },
             { key: 'builder', label: 'Builder' },
             { key: 'farmer', label: 'Farmer' },
             { key: 'fighter', label: 'Fighter' }
         ]
-        const tabGap = 8
         const tabWidth = (bounds.width - (tabGap * (filters.length - 1))) / filters.length
 
         filters.forEach((filter, index) => {
@@ -1011,7 +1171,7 @@ export class Menu {
                 x: bounds.x + ((tabWidth + tabGap) * index),
                 y: bounds.y,
                 width: tabWidth,
-                height: 38,
+                height: tabHeight,
                 variant: this.assignmentFilter === filter.key ? 'tabActive' : 'tabInactive',
                 onClick: () => {
                     this.assignmentFilter = filter.key
@@ -1137,6 +1297,12 @@ export class Menu {
             content.addChild(emptyState)
 
             return this.registerScrollArea({
+                hitArea: {
+                    x,
+                    y,
+                    width,
+                    height
+                },
                 viewport,
                 content,
                 maxScroll: 0,
@@ -1195,6 +1361,12 @@ export class Menu {
         }
 
         return this.registerScrollArea({
+            hitArea: {
+                x,
+                y,
+                width,
+                height
+            },
             viewport,
             content,
             maxScroll,
@@ -1207,16 +1379,22 @@ export class Menu {
     }
 
     renderAssignmentsTab(panel, bounds) {
-        this.renderAssignmentTabs(panel, bounds)
+        const layoutScale = this.clamp(bounds.height / 760, 0.84, 1.16)
+        const tabHeight = Math.round(38 * layoutScale)
+        const sectionGap = Math.round(18 * layoutScale)
+        const labelHeight = Math.round(22 * layoutScale)
+        const minBoxHeight = Math.round(140 * layoutScale)
 
-        const tabHeight = 38
-        const sectionGap = 18
-        const labelHeight = 22
-        const boxHeight = Math.max(140, Math.floor((bounds.height - tabHeight - labelHeight - (sectionGap * 3)) / 2))
+        this.renderAssignmentTabs(panel, bounds, {
+            tabHeight,
+            tabGap: Math.round(8 * layoutScale)
+        })
+
+        const boxHeight = Math.max(minBoxHeight, Math.floor((bounds.height - tabHeight - labelHeight - (sectionGap * 3)) / 2))
         const assignedBoxY = bounds.y + tabHeight + sectionGap
         const unassignedLabelY = assignedBoxY + boxHeight + sectionGap
-        const unassignedBoxY = unassignedLabelY + labelHeight + 6
-        const unassignedBoxHeight = Math.max(140, bounds.y + bounds.height - unassignedBoxY)
+        const unassignedBoxY = unassignedLabelY + labelHeight + Math.round(6 * layoutScale)
+        const unassignedBoxHeight = Math.max(minBoxHeight, bounds.y + bounds.height - unassignedBoxY)
 
         const activeEntries = this.buildAssignmentEntries(this.getCreaturesForAssignment(this.assignmentFilter))
         this.renderAssignmentBox(panel, {
@@ -1252,6 +1430,8 @@ export class Menu {
     }
 
     renderPanel(metrics) {
+        this.normalizeActiveTab()
+
         const panel = new PIXI.Container()
         panel.x = metrics.panelX
         panel.y = metrics.panelY
@@ -1274,7 +1454,7 @@ export class Menu {
             style: this.textStyles.title
         })
         title.x = metrics.contentPadding
-        title.y = 20
+        title.y = Math.round(20 * metrics.layoutScale)
         panel.addChild(title)
 
         const subtitle = new PIXI.Text({
@@ -1282,12 +1462,12 @@ export class Menu {
             style: this.textStyles.subtitle
         })
         subtitle.x = metrics.contentPadding
-        subtitle.y = 50
+        subtitle.y = Math.round(50 * metrics.layoutScale)
         panel.addChild(subtitle)
 
         this.renderTabs(panel, metrics)
 
-        const contentFrameY = 122
+        const contentFrameY = metrics.headerHeight
         const contentFrame = new PIXI.Graphics()
         this.drawRoundedRect(
             contentFrame,
@@ -1307,10 +1487,10 @@ export class Menu {
         panel.addChild(contentFrame)
 
         const bounds = {
-            x: metrics.contentPadding + 16,
-            y: contentFrameY + 16,
-            width: metrics.panelWidth - (metrics.contentPadding * 2) - 32,
-            height: (metrics.panelHeight - contentFrameY - metrics.contentPadding) - 32
+            x: metrics.contentPadding + metrics.contentInset,
+            y: contentFrameY + metrics.contentInset,
+            width: metrics.panelWidth - (metrics.contentPadding * 2) - (metrics.contentInset * 2),
+            height: (metrics.panelHeight - contentFrameY - metrics.contentPadding) - (metrics.contentInset * 2)
         }
 
         if (this.activeTab === TAB_ASSIGNMENTS) {
@@ -1318,10 +1498,16 @@ export class Menu {
             return
         }
 
+        if (this.activeTab === TAB_SELECTED && this.hasSelectedTab()) {
+            this.renderSelectedTab(panel, bounds)
+            return
+        }
+
         this.renderBuildingsTab(panel, bounds)
     }
 
     refresh() {
+        this.normalizeActiveTab()
         const metrics = this.getLayoutMetrics()
         this.buildPreview = null
         this.buildGrid = null

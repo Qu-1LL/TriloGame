@@ -84,7 +84,7 @@ export class Scaffolding extends Building {
         this.selectable = true
         this.description = `A construction site for ${targetBuilding.getName()}.`
         this.sprite = this.createDisplayObject()
-        this.syncTargetDisplayRotation()
+        this.setDisplayRotationTurns(targetBuilding.getDisplayRotationTurns?.() ?? 0)
     }
 
     static buildOpenMapFromTarget(targetBuilding) {
@@ -135,9 +135,35 @@ export class Scaffolding extends Building {
     }
 
     syncTargetDisplayRotation() {
-        if (this.targetBuilding?.sprite) {
-            this.targetBuilding.sprite.rotation = this.sprite?.rotation ?? 0
+        if (typeof this.targetBuilding?.setDisplayRotationTurns === 'function') {
+            this.targetBuilding.setDisplayRotationTurns(this.getDisplayRotationTurns())
+            return true
         }
+
+        if (this.targetBuilding?.sprite) {
+            this.targetBuilding.sprite.rotation = this.getDisplayRotationRadians?.() ?? 0
+            return true
+        }
+
+        return false
+    }
+
+    getDisplayPivotBaseSize() {
+        return cloneSize(this.size)
+    }
+
+    setDisplayRotationTurns(turns) {
+        const normalizedTurns = ((Math.round(Number(turns) || 0) % 4) + 4) % 4
+        this.displayRotationTurns = normalizedTurns
+
+        if (this.sprite) {
+            // Scaffold tiles already change footprint via `openMap`, so rotating the container
+            // would visually double-rotate the construction site.
+            this.sprite.rotation = 0
+        }
+
+        this.syncTargetDisplayRotation()
+        return this.displayRotationTurns
     }
 
     rotateMap() {
@@ -145,7 +171,7 @@ export class Scaffolding extends Building {
         this.size = cloneSize(this.targetBuilding.size)
         this.openMap = Scaffolding.buildOpenMapFromTarget(this.targetBuilding)
         this.rebuildDisplayObject()
-        this.syncTargetDisplayRotation()
+        this.setDisplayRotationTurns(this.getDisplayRotationTurns())
         return this.openMap
     }
 
@@ -399,7 +425,7 @@ export class Scaffolding extends Building {
             x: this.location.x,
             y: this.location.y
         }
-        const displayRotation = this.sprite?.rotation ?? 0
+        const displayRotationTurns = this.getDisplayRotationTurns()
 
         if (!activeCave || !targetBuilding || !Number.isFinite(location.x) || !Number.isFinite(location.y)) {
             return false
@@ -408,8 +434,10 @@ export class Scaffolding extends Building {
         let scaffoldRemoved = false
 
         try {
-            if (targetBuilding?.sprite) {
-                targetBuilding.sprite.rotation = displayRotation
+            if (typeof targetBuilding?.setDisplayRotationTurns === 'function') {
+                targetBuilding.setDisplayRotationTurns(displayRotationTurns)
+            } else if (targetBuilding?.sprite) {
+                targetBuilding.sprite.rotation = displayRotationTurns * (Math.PI / 2)
             }
 
             if (!activeCave.removeBuilding(this, source ?? 'scaffoldingComplete')) {
@@ -432,7 +460,7 @@ export class Scaffolding extends Building {
         }
 
         this.sprite = this.createDisplayObject()
-        this.sprite.rotation = displayRotation
+        this.setDisplayRotationTurns(displayRotationTurns)
         this.sprite.pivot.set(this.size.x * BUILD_TILE_HALF_SIZE, this.size.y * BUILD_TILE_HALF_SIZE)
 
         try {

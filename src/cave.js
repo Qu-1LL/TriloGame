@@ -39,10 +39,6 @@ export function toKey(location) {
     }
 }
 
-function isTrackedTrilobite(creature) {
-    return creature?.constructor?.name === 'Trilobite'
-}
-
 function isEnemyCreature(creature) {
     return creature?.assignment === 'enemy' || creature?.constructor?.name === 'Enemy'
 }
@@ -302,7 +298,7 @@ export class Cave extends Graph {
         } 
     }
 
-    canBuild(building,location) {
+    canBuild(building,location, { preserveReachability = false } = {}) {
         const hasQueen = this.getQueenBuilding() !== null
         const buildingIsQueen = building?.name === 'Queen' || building?.constructor?.name === 'Queen'
         const requireReachableTiles = hasQueen && !buildingIsQueen
@@ -320,11 +316,146 @@ export class Cave extends Graph {
                 if (curTile.getBuilt() || curTile.getBase() !== 'empty' || !curTile.creatureFits()) {
                     return false
                 }
+                if (typeof curTile.getTrilobites === 'function' && curTile.getTrilobites().length > 0) {
+                    return false
+                }
                 if (requireReachableTiles && !this.isTileReachable(curTile)) {
                     return false
                 }
             }
         }
+
+        if (preserveReachability && requireReachableTiles && !this.simulatedBuildPreservesReachability(building, location)) {
+            return false
+        }
+
+        if (preserveReachability && requireReachableTiles && !this.simulatedBuildPreservesBuildingAccess(building, location)) {
+            return false
+        }
+
+        return true
+    }
+
+    buildSimulatedReachableKeySet(building, location) {
+        const simulatedReachableKeys = new Set()
+        for (const tile of this.reachableTiles) {
+            if (tile?.key) {
+                simulatedReachableKeys.add(tile.key)
+            }
+        }
+
+        if (!building || !location) {
+            return simulatedReachableKeys
+        }
+
+        for (let x = 0; x < building.size.x; x++) {
+            for (let y = 0; y < building.size.y; y++) {
+                if (building.openMap[y][x] > 1) {
+                    continue
+                }
+
+                const tileKey = `${location.x + x},${location.y + y}`
+                simulatedReachableKeys.delete(tileKey)
+            }
+        }
+
+        return simulatedReachableKeys
+    }
+
+    isBuildingAccessibleFromReachableKeys(building, reachableKeys) {
+        if (!building || !Array.isArray(building.tileArray) || building.tileArray.length === 0 || !(reachableKeys instanceof Set)) {
+            return true
+        }
+
+        for (const tile of building.tileArray) {
+            if (tile?.creatureFits() && reachableKeys.has(tile.key)) {
+                return true
+            }
+        }
+
+        for (const tile of building.tileArray) {
+            if (!tile) {
+                continue
+            }
+
+            for (const neighbor of tile.getNeighbors()) {
+                if (!neighbor?.creatureFits() || !reachableKeys.has(neighbor.key)) {
+                    continue
+                }
+
+                return true
+            }
+        }
+
+        return false
+    }
+
+    simulatedBuildPreservesReachability(building, location) {
+        const queenBuilding = this.getQueenBuilding()
+        if (!queenBuilding || !building || !location) {
+            return true
+        }
+
+        const simulatedReachableKeys = this.buildSimulatedReachableKeySet(building, location)
+
+        if (simulatedReachableKeys.size === 0) {
+            return true
+        }
+
+        const queue = []
+        const visited = new Set()
+
+        for (const tile of queenBuilding.tileArray) {
+            if (!tile?.key || !simulatedReachableKeys.has(tile.key) || visited.has(tile.key)) {
+                continue
+            }
+
+            visited.add(tile.key)
+            queue.push(tile)
+        }
+
+        let queueHead = 0
+
+        while (queueHead < queue.length) {
+            const currentTile = queue[queueHead]
+            queueHead++
+
+            for (const neighbor of currentTile.getNeighbors()) {
+                if (!neighbor?.key || visited.has(neighbor.key) || !simulatedReachableKeys.has(neighbor.key)) {
+                    continue
+                }
+
+                visited.add(neighbor.key)
+                queue.push(neighbor)
+            }
+        }
+
+        return visited.size === simulatedReachableKeys.size
+    }
+
+    simulatedBuildPreservesBuildingAccess(building, location) {
+        if (!building || !location) {
+            return true
+        }
+
+        const currentReachableKeys = this.buildSimulatedReachableKeySet()
+        const simulatedReachableKeys = this.buildSimulatedReachableKeySet(building, location)
+
+        for (const existingBuilding of this.buildings) {
+            if (!existingBuilding || existingBuilding === building) {
+                continue
+            }
+
+            const currentlyAccessible = this.isBuildingAccessibleFromReachableKeys(existingBuilding, currentReachableKeys)
+            if (!currentlyAccessible) {
+                continue
+            }
+
+            if (!this.isBuildingAccessibleFromReachableKeys(existingBuilding, simulatedReachableKeys)) {
+                return false
+            }
+        }
+
         return true
     }
 
@@ -340,6 +471,7 @@ export class Cave extends Graph {
 
         this.buildings.add(building)
         building.sprite = displayObject
+        building.syncDisplayRotation?.()
         building.cave = this
         if (typeof building.getBfsFieldObject === 'function') {
             building.getBfsFieldObject()?.setCave?.(this)
@@ -468,11 +600,29 @@ export class Cave extends Graph {
                 continue
             }
 
+            let creatureWasAffected = false
+
             const assignedBuilding = typeof creature.getAssignedBuilding === 'function'
                 ? creature.getAssignedBuilding()
                 : creature.assignedBuilding
 
+            if (typeof creature.clearBuilderSourcePost === 'function' && creature.builderSourcePost === building) {
+                creature.clearBuilderSourcePost()
+                creatureWasAffected = true
+            }
+
+            if (typeof building.removeAssignment === 'function') {
+                building.removeAssignment(creature)
+            }
+
+            if (typeof building.releaseMaterialReservation === 'function') {
+                building.releaseMaterialReservation(creature)
+            }
+
             if (assignedBuilding !== building) {
+                if (creatureWasAffected) {
+                    creature.restartBehavior?.()
+                }
                 continue
             }
 
@@ -485,6 +635,9 @@ export class Cave extends Graph {
             } else if ('assignedBuilding' in creature) {
                 creature.assignedBuilding = null
             }
+
+            creatureWasAffected = true
+            creature.restartBehavior?.({ clearQueue: false })
         }
 
         if (typeof building.cleanupBeforeRemoval === 'function') {
@@ -1074,7 +1227,7 @@ export class Cave extends Graph {
             return ['enemy']
         }
 
-        if (isTrackedTrilobite(creature)) {
+        if (creature) {
             return ['colony']
         }
 
@@ -1106,7 +1259,7 @@ export class Cave extends Graph {
             return this.enemies
         }
 
-        if (isTrackedTrilobite(creature)) {
+        if (creature) {
             return this.trilobites
         }
 
@@ -1133,7 +1286,7 @@ export class Cave extends Graph {
     }
 
     syncTrilobiteTileOccupancy(creature, fromTile = null, toTile = null) {
-        if (!isTrackedTrilobite(creature)) {
+        if (!creature || isEnemyCreature(creature)) {
             return false
         }
 
@@ -1172,6 +1325,9 @@ export class Cave extends Graph {
         for (const building of this.buildings) {
             if (typeof building.removeAssignment === 'function') {
                 building.removeAssignment(creature)
+            }
+            if (typeof building.releaseMaterialReservation === 'function') {
+                building.releaseMaterialReservation(creature)
             }
         }
 

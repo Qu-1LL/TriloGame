@@ -132,6 +132,7 @@ export class Building {
     constructor (name,size,openMap,game,station) {
         this.name = name
         this.size = cloneSize(size)
+        this.displayBaseSize = cloneSize(size)
         this.openMap = cloneOpenMap(openMap)
         this.game = game
         this.tileArray = new Array()
@@ -149,6 +150,7 @@ export class Building {
         })
         this.recipe = null
         this.selectable = true
+        this.displayRotationTurns = 0
     }
 
     rotateMap() {
@@ -189,6 +191,33 @@ export class Building {
     }
     getDescription() {
         return this.description
+    }
+
+    getDisplayPivotBaseSize() {
+        return cloneSize(this.displayBaseSize ?? this.size)
+    }
+
+    getDisplayRotationTurns() {
+        return ((this.displayRotationTurns ?? 0) % 4 + 4) % 4
+    }
+
+    getDisplayRotationRadians() {
+        return this.getDisplayRotationTurns() * (Math.PI / 2)
+    }
+
+    setDisplayRotationTurns(turns) {
+        const normalizedTurns = ((Math.round(Number(turns) || 0) % 4) + 4) % 4
+        this.displayRotationTurns = normalizedTurns
+
+        if (this.sprite) {
+            this.sprite.rotation = this.getDisplayRotationRadians()
+        }
+
+        return this.displayRotationTurns
+    }
+
+    syncDisplayRotation() {
+        return this.setDisplayRotationTurns(this.getDisplayRotationTurns())
     }
 
     getRecipe() {

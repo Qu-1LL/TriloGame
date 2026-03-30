@@ -150,6 +150,8 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `bfsField.updatedCreatures: Set<Creature>`
 - `bfsField.trackedBuildings: Set<Building>`
 - `bfsField.trackedCreatures: Set<Creature>`
+- `displayBaseSize: { x: number, y: number }` (unrotated display footprint used for sprite pivot math)
+- `displayRotationTurns: number` (quarter-turn clockwise rotation state for the building's visual display)
 - `recipe: Record<string, number> | null` (construction cost for scaffolded buildables)
 - `selectable: boolean` (`false` only for runtime buildings that should ignore normal building selection/menu flow)
 
@@ -166,13 +168,16 @@ This document reflects the currently implemented gameplay and UI behavior in the
 5. Game enters `buildMode` and shows the floating final-building sprite while keeping the scaffolding instance as the object that will actually be placed.
 6. Mouse move updates the floating preview position.
 7. `R` rotates the floating final-building preview and the underlying scaffolding/target-building footprint together.
-8. Click empty tile to attempt placement.
-9. `Cave.canBuild` validates all non-`>1` footprint tiles and, once the queen exists, requires every occupied footprint tile to be in the queen-connected reachable-tile set.
-10. `Cave.build` writes building occupancy/passability, stores `tileArray`, and adds the building display object using pivot-based placement for both sprites and multi-cell scaffold containers.
-11. Optional `onBuilt(cave)` runs only for the building instance actually being placed. Scaffolding placement does not trigger the target building's `onBuilt`.
-12. When scaffolding reaches its recipe requirement, it removes itself and places the stored target building at the same top-left tile and rotation; the final target's `onBuilt(cave)` runs at that moment.
-13. Successful placement exits build mode and clears the current selection/preview state without automatically closing the shared menu panel; `Escape` exits active UI state and also closes the panel.
-14. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave, their footprint becomes passable again, and creatures assigned to that building clear their stale assignment/work queue.
+8. Floating preview pivot math uses the target building's unrotated display footprint so the cursor stays bound to the same top-left placement tile across quarter-turn rotations, including non-square buildings.
+9. Click empty tile to attempt placement.
+10. `Cave.canBuild` validates all non-`>1` footprint tiles, rejects placement if any trilobite is currently occupying one of those footprint tiles, and, once the queen exists, requires every occupied footprint tile to be in the queen-connected reachable-tile set.
+11. On player placement click, build validation also runs a simulated reachability pass: it duplicates the current `reachableTiles` set, removes every `0`/`1` footprint tile of the candidate placement from that simulated set, then flood-fills outward from the queen footprint; placement is rejected if any previously reachable tile would become disconnected.
+12. The same simulated placement check also requires every currently accessible existing building to retain at least one reachable interior tile or reachable adjacent approach tile, so new construction cannot fully box in an older building.
+13. `Cave.build` writes building occupancy/passability, stores `tileArray`, reapplies the building's stored quarter-turn display rotation, and adds the building display object using pivot-based placement for both sprites and multi-cell scaffold containers.
+14. Optional `onBuilt(cave)` runs only for the building instance actually being placed. Scaffolding placement does not trigger the target building's `onBuilt`.
+15. When scaffolding reaches its recipe requirement, it removes itself and places the stored target building at the same top-left tile and preserved quarter-turn rotation; the final target's `onBuilt(cave)` runs at that moment.
+16. Successful placement exits build mode and clears the current selection/preview state without automatically closing the shared menu panel; `Escape` exits active UI state and also closes the panel.
+17. Buildings can take damage through `takeDamage`; at `0` health they are removed from the cave, their footprint becomes passable again, and any affected trilobites clear stale assignment/reservation state, release destroyed-building links such as `assignedBuilding` or `builderSourcePost`, and restart their current role behavior.
 
 ### `Factory`
 - Purpose: lightweight blueprint wrapper for unlocked buildings.
@@ -201,14 +206,15 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - Workflow:
 1. Constructed automatically from a real target building chosen in the build menu; it is not part of `game.unlockedBuildings`.
 2. Rotating the floating scaffold also rotates the stored target building and regenerates the scaffold footprint/display from the rotated target `openMap`.
-3. While placed, scaffolding blocks the full final occupied footprint, even where the eventual target would be passable.
-4. Builders reserve outstanding recipe needs on scaffolding through `materialReservations` so multiple carriers cannot over-claim the same missing material.
-5. `deposit()` only accepts resources that still have remaining requirement, clamps the accepted amount to that remainder, and clears that builder's scaffold-side reservation.
-6. `getRecipeProgress()` returns cloned required/deposited/remaining counts plus reserved totals and construction-progress state.
-7. `applyConstructionWork()` advances rarity-weighted build progress separately from material deposits.
-8. `completeConstruction()` only succeeds once both recipe deposits and construction progress are complete; then it removes the scaffold and places the stored target at the same top-left location and rotation through normal `Cave.build` logic.
-9. If scaffolding is destroyed before completion, the stored target is discarded and no final building is placed.
-10. If final placement fails during completion, the scaffold rebuilds itself at the same location, preserves progress, and remains retryable instead of becoming a dead completed scaffold.
+3. Scaffolding stores the target building's quarter-turn visual rotation separately from its own rebuilt tile footprint so the final building sprite keeps the same orientation when construction completes.
+4. While placed, scaffolding blocks the full final occupied footprint, even where the eventual target would be passable.
+5. Builders reserve outstanding recipe needs on scaffolding through `materialReservations` so multiple carriers cannot over-claim the same missing material.
+6. `deposit()` only accepts resources that still have remaining requirement, clamps the accepted amount to that remainder, and clears that builder's scaffold-side reservation.
+7. `getRecipeProgress()` returns cloned required/deposited/remaining counts plus reserved totals and construction-progress state.
+8. `applyConstructionWork()` advances rarity-weighted build progress separately from material deposits.
+9. `completeConstruction()` only succeeds once both recipe deposits and construction progress are complete; then it removes the scaffold and places the stored target at the same top-left location and preserved rotation through normal `Cave.build` logic.
+10. If scaffolding is destroyed before completion, the stored target is discarded and no final building is placed.
+11. If final placement fails during completion, the scaffold rebuilds itself at the same location, preserves progress and rotation state, and remains retryable instead of becoming a dead completed scaffold.
 
 ### `Queen`
 - Type:
@@ -293,7 +299,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `recipe: { Sandstone: 20 }`
 - `capacity: number` (20)
 - Workflow:
-1. Placeable via build menu.
+1. Implemented as a building type, but not currently included in the default `game.unlockedBuildings` build menu list.
 2. No active transfer workflow is currently implemented.
 
 ### `Smith`
@@ -305,7 +311,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - `recipe: { Sandstone: 20 }`
 - crafting recipe system not implemented yet.
 - Workflow:
-1. Placeable via build menu.
+1. Implemented as a building type, but not currently included in the default `game.unlockedBuildings` build menu list.
 2. Crafting interactions are placeholders only.
 
 ### `Radar`
@@ -338,6 +344,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - tile/building runtime state plus separate `trilobites` and `enemies` creature sets,
 - `revealedTiles`, a live `Set<Tile>` tracking every revealed tile including revealed walls,
 - `reachableTiles`, a live `Set<Tile>` tracking the currently passable tiles connected to the queen building's passable footprint,
+- wall mining explicitly reveals the newly emptied tile, and if that opening touches a passable tile that was previously unreachable, the newly connected cave section is reprocessed so its passable tiles join `reachableTiles` and its newly accessible boundary tiles join `revealedTiles`, even when radar had already made some of that section visible,
 - temporary destination-seeded distance-field generation for manual movement and non-building targets,
 - per-building lazy `BfsField` objects over reachable tiles only,
 - game-held `BfsField` objects for `enemy` and `colony`, computed only over revealed tiles,
@@ -345,7 +352,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - incremental `BfsField` refreshes that rebalance around dirty tiles instead of recreating the whole map by default,
 - shared combat-field dirtying on creature spawn/move/removal and on tile/building/reveal changes,
 - reachable-tile recomputation when buildings are placed/removed or wall mining changes passable connectivity,
-- creature deaths mark shared combat fields dirty and are applied on the next field refresh/access,
+- creature deaths mark shared combat fields dirty, remove that creature from every building assignment/material-reservation collection, and are applied on the next field refresh/access,
 - movement, spawn, and removal rules, including denying spawns onto unreachable tiles,
 - danger-state syncing for enemy spawn/death, including clearing `game.danger` when the last enemy is removed,
 - full-party healing for all remaining trilobites when the last enemy is removed,
@@ -357,6 +364,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 - action queue (`NodeQueue`),
 - path queue/path preview,
 - combat state (`health`, `maxHealth`, `damage`) and basic damage/death handling,
+- behavior restart helper used after assignment/target cleanup,
 - navigation helpers that reconstruct routes from distance fields instead of direct `bfsPath` calls,
 - sprite-placement helper that snaps movers to the destination tile center and then applies a fresh random 1-15 px radial offset on each completed move,
 - generic selection/build interactions.
@@ -432,11 +440,15 @@ This document reflects the currently implemented gameplay and UI behavior in the
 2. Each event increments the stat with the same key name.
 
 ### Global window events (`main.js`)
-- `wheel`:
+- Canvas `wheel`:
 1. If the cursor is over the shared menu panel, world zoom is suppressed.
-2. If the shared menu is open on the `Buildings` tab and the cursor is inside the lower building-grid container, the wheel scrolls that container.
+2. If the cursor is inside a scrollable menu box, the wheel scrolls that specific box instead of zooming the world.
 3. Otherwise, zoom in/out (`currentScale`) with clamped bounds.
 4. World zoom repositions non-floating tile-container children relative to screen center.
+- `resize`:
+1. The PIXI renderer resizes live to the browser window while the game is running.
+2. The canvas size is derived from `document.documentElement.clientWidth/clientHeight` instead of raw `window.innerWidth/innerHeight`, so browser scrollbars are excluded from the game viewport.
+3. `Game.handleViewportResize` preserves the current on-screen world layout while updating the viewport center, menu layout, and any active BFS debug overlay.
 - `mousedown`:
 1. Capture drag start position.
 2. Reset drag flag.
@@ -491,14 +503,15 @@ This document reflects the currently implemented gameplay and UI behavior in the
 2. The button is only rendered while the panel is closed; there is no in-panel hide button.
 - Main menu tabs:
 1. Left tab is `Buildings`.
-2. Right tab is `Assignments`.
-3. `pointerup` on either tab switches the panel content in place.
+2. Middle tab is `Assignments`.
+3. A third `Selected` tab is rendered only while a trilobite or building is currently selected.
+4. `pointerup` on any visible tab switches the panel content in place.
 - `Buildings` tab:
 1. Shows buildable factories from the selected creature when available, otherwise from `game.unlockedBuildings`.
 2. The top half of the tab is a persistent preview card that shows the currently hovered or selected building's name, size, sprite, and description.
-3. The lower half of the tab is a scrollable building-grid container.
+3. The lower half of the tab is a scrollable building-grid container with a broad wheel-hit area covering the whole box, not just the masked inner viewport.
 4. The grid is 4 cards wide.
-5. Each card shows only the building name and sprite preview; the card name shrinks to fit without overflowing.
+5. Each card is rendered as a square and shows only the building name and sprite preview; the card name shrinks to fit without overflowing.
 6. Hovering a card updates the preview card immediately.
 7. Clicking a card keeps that building selected in the preview, creates the target building, wraps it in scaffolding, and enters placement mode with the target building sprite attached to the cursor.
 8. If a placement preview is already active, the old floating preview plus its pending scaffolding state are destroyed before the new one starts.
@@ -511,6 +524,10 @@ This document reflects the currently implemented gameplay and UI behavior in the
 6. Clicking an entry in the upper box moves one trilobite from the selected assignment back to `unassigned`.
 7. Clicking an entry in the lower box moves one trilobite from `unassigned` into the currently selected assignment.
 8. Each transfer immediately updates the creature's actual runtime assignment and requeues its corresponding behavior.
+- `Selected` tab:
+1. Only appears while `Menu.selectedObject` is not `null`.
+2. Shows the selected trilobite or building name plus a delete button.
+3. Pressing the delete button uses the normal creature/building `removeFromGame` flow and clears the current selection afterward.
 
 ### Hover-specific behavior
 - During move mode, hovering a passable tile outside the open menu panel and outside the top-right menu button previews BFS path from the selected creature.
@@ -524,8 +541,10 @@ This document reflects the currently implemented gameplay and UI behavior in the
 ### Shared menu structure
 1. `Game` owns one persistent `Menu` instance on `uiContainer`.
 2. While the panel is closed, the menu renders a top-right `Menu` button; opening the panel replaces that button with a full-height right-side panel.
-3. The panel has two tabs: `Buildings` on the left and `Assignments` on the right.
-4. The panel content is redrawn in place when the active tab or current selection changes instead of creating a new menu object per selection.
+3. The panel always has `Buildings` and `Assignments`, and conditionally adds `Selected` while a trilobite or building is selected.
+4. If the active tab disappears because the current selection was cleared or deleted, the menu falls back to `Buildings`.
+5. The panel content is redrawn in place when the active tab or current selection changes instead of creating a new menu object per selection.
+6. The panel width stays effectively fixed at its standard narrow size, while button sizing, padding, section spacing, and internal panel layout scale from screen height.
 
 ### Selection-driven menu flow
 1. Selecting a creature/building calls `Game.selected.setSelected`.
@@ -537,28 +556,36 @@ This document reflects the currently implemented gameplay and UI behavior in the
 5. The camera recenters while accounting for the width of the open right-side panel.
 
 ### Selection impact on the menu
-1. Selection no longer has its own tab.
+1. Selection adds the conditional `Selected` tab to the shared panel.
 2. A selected creature still affects the `Buildings` tab because that tab prefers `creature.getBuildable()` when a creature is selected.
 3. The `Assignments` tab reads from the colony-wide trilobite set on the cave rather than from the currently selected object.
+4. Deleting the selected object through the `Selected` tab uses the normal runtime removal path and then clears the selection.
 
 ### `Buildings` tab flow
 1. Lists buildable factories from the selected creature when one is selected; otherwise it falls back to `game.unlockedBuildings`.
 2. The top preview card shows the currently hovered building, or the last clicked building when nothing is hovered.
 3. Inside that preview card, the name/size/description are on the left side and the building image fills the full right half.
-4. The bottom build list is rendered as a 4-column scrollable grid.
+4. The bottom build list is rendered as a 4-column scrollable grid of square cards.
 5. Each grid card shows only the building name and its sprite preview.
-6. Mouse-wheel scrolling is captured only while the cursor is over that grid container.
+6. Mouse-wheel scrolling is captured while the cursor is anywhere over the building-list box, including its padding and scrollbar area.
 7. Clicking a card starts placement immediately and reuses the shared panel instead of opening a second build-options menu.
-8. Placement click on a valid tile commits build; invalid placement keeps the current preview active.
+8. Placement click on a valid tile commits build; invalid placement, including when any occupied `0`/`1` footprint tile currently contains a trilobite, keeps the current preview active.
 
 ### `Assignments` tab flow
 1. Shows four assignment filter tabs across the top: `Miner`, `Builder`, `Farmer`, `Fighter`.
 2. The top box lists the count of trilobites currently in the chosen assignment.
 3. The bottom box lists the count of unassigned trilobites.
-4. Both boxes are independently scrollable.
+4. Both boxes are independently scrollable, and the wheel is captured anywhere inside each framed box.
 5. Clicking an upper-box entry moves one trilobite from that assignment back to `unassigned`.
 6. Clicking a lower-box entry moves one trilobite from `unassigned` into the chosen assignment.
 7. Transfers mutate the live trilobite objects immediately by changing `assignment`, clearing queued actions, and invoking the corresponding behavior.
+
+### `Selected` tab flow
+1. Appears only while a trilobite or building is currently selected.
+2. Shows basic details for the current selection.
+3. Provides a delete button labelled for the selected object type.
+4. Clicking delete calls the selected object's normal `removeFromGame` path.
+5. Once deletion clears the selection, the `Selected` tab disappears and the menu falls back to `Buildings`.
 
 ### Menu/Game state interaction
 - `cleanActive()` is the central reset for active selection state:

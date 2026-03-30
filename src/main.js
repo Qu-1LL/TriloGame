@@ -10,6 +10,8 @@ import { Game } from './game.js'
 
 const app = new PIXI.Application();
 let gamePaused = true
+const VIEWPORT_MARGIN_X = 0
+const VIEWPORT_MARGIN_Y = 0
 
 function formatInventory(inv) {
     if (!inv || inv.amount <= 0 || !inv.type) {
@@ -165,6 +167,28 @@ function getRandomInitialQueenLocation() {
     }
 }
 
+function getViewportSize() {
+    const root = document.documentElement
+    const availableWidth = root?.clientWidth ?? window.innerWidth
+    const availableHeight = root?.clientHeight ?? window.innerHeight
+
+    return {
+        width: Math.max(320, Math.floor(availableWidth - (VIEWPORT_MARGIN_X * 2))),
+        height: Math.max(320, Math.floor(availableHeight - (VIEWPORT_MARGIN_Y * 2)))
+    }
+}
+
+function applyCanvasViewportStyles(canvas, viewport) {
+    if (!canvas || !viewport) {
+        return false
+    }
+
+    canvas.style.display = 'block'
+    canvas.style.width = `${viewport.width}px`
+    canvas.style.height = `${viewport.height}px`
+    return true
+}
+
 function buildInitialColony(cave, game) {
     const starterWallDistance = 5
     const starterQueenDistance = 10
@@ -216,11 +240,19 @@ function buildInitialColony(cave, game) {
 
 async function setup()
 {
+    const viewport = getViewportSize()
+
     // Intialize the application.
-    await app.init({ background: '#000000', height: window.innerHeight-5, width: window.innerWidth });
+    await app.init({
+        background: '#000000',
+        width: viewport.width,
+        height: viewport.height
+    });
 
     // Then adding the application's canvas to the DOM body.
-    document.body.appendChild(app.canvas);
+    applyCanvasViewportStyles(app.canvas, viewport)
+    const appRoot = document.getElementById('app') ?? document.body
+    appRoot.appendChild(app.canvas);
 }
 
 async function preload()
@@ -401,13 +433,21 @@ async function preload()
 
     //event listeners relative to full game
 
-    window.addEventListener("wheel", (event) => {
+    const resizeViewport = () => {
+        const viewport = getViewportSize()
+        app.renderer.resize(viewport.width, viewport.height)
+        applyCanvasViewportStyles(app.canvas, viewport)
+        game.handleViewportResize(viewport.width, viewport.height)
+    }
+
+    const handleWheel = (event) => {
         if (game.menu?.handleWheel?.(event)) {
             event.preventDefault()
             return
         }
 
         if (game.dragging) {
+            event.preventDefault()
             return
         }
         if (event.deltaY < 0) {
@@ -424,7 +464,11 @@ async function preload()
             }
         }
         game.syncWorldSpriteTransforms(0, 0, { skipFloatingBuildingOffset: true })
-    })
+        event.preventDefault()
+    }
+
+    app.canvas.addEventListener('wheel', handleWheel, { passive: false })
+    window.addEventListener('resize', resizeViewport)
 
     window.addEventListener('mousedown', (e) => {
         const rect = app.canvas.getBoundingClientRect();

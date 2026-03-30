@@ -57,6 +57,23 @@ export class Creature {
         this.pathPreview = []
     }
 
+    restartBehavior({ clearQueue = true } = {}) {
+        if (clearQueue) {
+            this.clearActionQueue()
+        }
+
+        if (typeof this.getBehavior !== 'function') {
+            return false
+        }
+
+        const behavior = this.getBehavior()
+        if (typeof behavior !== 'function') {
+            return false
+        }
+
+        return behavior.call(this)
+    }
+
     getDamage() {
         return this.damage
     }
