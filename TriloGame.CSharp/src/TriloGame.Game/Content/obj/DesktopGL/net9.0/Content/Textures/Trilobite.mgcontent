@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PipelineBuildEvent xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <SourceFile>d:/Jeff's Stuff/Trilobites/TriloGame/TriloGame.CSharp/src/TriloGame.Game/Content/Textures/Trilobite.png</SourceFile>
+  <SourceTime>2026-03-30T22:32:48.8234042-05:00</SourceTime>
+  <DestFile>d:/Jeff's Stuff/Trilobites/TriloGame/TriloGame.CSharp/src/TriloGame.Game/Content/bin/DesktopGL/Content/Textures/Trilobite.xnb</DestFile>
+  <DestTime>2026-03-31T08:36:51.8703363-05:00</DestTime>
+  <Importer>TextureImporter</Importer>
+  <ImporterTime>2025-10-20T09:25:32-05:00</ImporterTime>
+  <Processor>TextureProcessor</Processor>
+  <ProcessorTime>2025-10-20T09:25:32-05:00</ProcessorTime>
+  <Dependencies />
+  <BuildAsset />
+  <BuildOutput />
+</PipelineBuildEvent>

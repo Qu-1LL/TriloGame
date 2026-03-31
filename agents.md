@@ -594,6 +594,6 @@ This document reflects the currently implemented gameplay and UI behavior in the
 3. Exits move/build modes.
 4. Removes and destroys the floating building sprite.
 5. Clears the selected object and selected-path overlays.
-6. Preserves the shared menu panel by default so the player can keep browsing tabs after the selection clears.
+7. Preserves the shared menu panel by default so the player can keep browsing tabs after the selection clears.
 - `Escape` is the explicit path that both clears active state and closes the shared menu panel; there is no dedicated hide button in the panel UI.
 - Several workflows call `cleanActive()` to prevent mode overlap and stale UI.
