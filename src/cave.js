@@ -1393,6 +1393,16 @@ export class Cave extends Graph {
             this.game.danger = true
         }
 
+        if (!isEnemyCreature(creature) && typeof this.game?.emit === 'function') {
+            this.game.emit('trilobiteSpawned', {
+                creature,
+                cave: this,
+                tileKey: tile.key,
+                location: { ...creature.location },
+                assignment: creature.assignment ?? 'unassigned'
+            })
+        }
+
         this.markCreatureBfsFieldsDirty(creature, [tile.key])
 
         return true
