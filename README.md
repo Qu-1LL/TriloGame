@@ -16,6 +16,6 @@ While players develop their city and fight wave after wave of enemies, they will
 
 ## The Road Map
 
-In the game's current state, we only have a few buildings and some pretty basic visuals to go along with it. Since this game is meant to stand out based on game design, we will be fleshing that aspect of the game out first and foremost. Currently, we are working on the first few chunks of the skill tree. We intend for the "skill lines" to be small constellations of 5-10 skills that cna be combined with other skill lines in each run's pathworked skill tree. We will also be working on a similar semi-linear tree for quest lines as well.
+In the game's current state, we only have a few buildings and some pretty basic visuals to go along with it. Since this game is meant to stand out based on game design, we will be fleshing that aspect of the game out first and foremost. Currently, we are working on the first few chunks of the skill tree. We intend for the "skill lines" to be small constellations of 5-10 skills that can be combined with other skill lines in each run's patchworked skill tree. We will also be working on a similar semi-linear tree for quest lines as well.
 
 As we decide on which skill trees we want to add, how they should work, and which ones we plan to add first, we will be adding them to a proper road map below. Until then just let your imagine wander in how cool this game will be one day!
