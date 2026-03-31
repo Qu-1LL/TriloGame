@@ -4,9 +4,9 @@ The game is deployed to github pages here: https://qu-1ll.github.io/TriloGame/ F
 
 You can read the design and road map below, or check out the latest release notes for more information!
 
-# 'Game Mechanics and Design Plans'
+# Game Mechanics and Design Plans
 
-## 'General Gameplay'
+## General Gameplay
 
 The Scuttlers is an attempt at combining the colony simulator, tower defense, and roguelike game genres into one game. We plan to do this with an arsenal of intricate game mechanics and lots of unique design inspired by many other games in those genres. 
 
@@ -14,7 +14,7 @@ In this game you will build a city from the ground up while defending your city 
 
 While players develop their city and fight wave after wave of enemies, they will also be completing quests and filling in a skill tree. As players defeat rounds of enemies they will draft and place different branches onto their skill tree for the run. Completing quests will then allow players to unlock the skills on the tree as they are putting the tree together, allowing for a unique and self-generated progression every run!
 
-## 'The Road Map'
+## The Road Map
 
 In the game's current state, we only have a few buildings and some pretty basic visuals to go along with it. Since this game is meant to stand out based on game design, we will be fleshing that aspect of the game out first and foremost. Currently, we are working on the first few chunks of the skill tree. We intend for the "skill lines" to be small constellations of 5-10 skills that cna be combined with other skill lines in each run's pathworked skill tree. We will also be working on a similar semi-linear tree for quest lines as well.
 
