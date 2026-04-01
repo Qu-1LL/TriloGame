@@ -11,6 +11,7 @@ using TriloGame.Game.Core.Simulation;
 using TriloGame.Game.Core.World;
 using TriloGame.Game.Rendering;
 using TriloGame.Game.Shared.Math;
+using TriloGame.Game.UI.Debug;
 using TriloGame.Game.UI.Input;
 using TriloGame.Game.UI.Menu;
 using TriloGame.Game.UI.Selection;
@@ -23,10 +24,12 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
     private readonly GraphicsDeviceManager _graphics;
     private readonly AudioService _audio = new();
     private readonly InputController _input = new();
+    private readonly DoubleClickTracker _manualMoveDoubleClick = new();
     private readonly CameraController _camera = new();
     private readonly MenuController _menu = new();
     private GameSession _session = new();
     private readonly HashSet<Trilobite> _selectedTrilobites = [];
+    private Trilobite[] _pendingManualMoveTargets = [];
 
     private SpriteBatch _spriteBatch = null!;
     private RenderingContext _rendering = null!;
@@ -41,6 +44,7 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
     private bool _selectionDragActive;
     private double _tickSpeedMs = GameConstants.TickSpeedNormal;
     private double _tickAccumulatorMs;
+    private double _uiClockMs;
     private Scaffolding? _floatingBuilding;
     private Rectangle? _selectionBoxBounds;
     private RoleRadialMenuState? _roleRadialMenu;
@@ -78,6 +82,8 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
         builder.AppendLine($"TickSpeedMs: {_tickSpeedMs}");
         builder.AppendLine($"TickAccumulatorMs: {_tickAccumulatorMs:0.###}");
         builder.AppendLine($"ActiveBfsDebugField: {_activeBfsDebugField ?? "none"}");
+        builder.AppendLine($"TickTiming: {FormatTickProfile(_session.TickProfiler.Last, "last")}");
+        builder.AppendLine($"TickTimingAverage: {FormatTickProfile(_session.TickProfiler.Average, "avg")}");
         builder.AppendLine($"Viewport: {Window.ClientBounds.Width}x{Window.ClientBounds.Height}");
         builder.AppendLine($"CameraOrigin: {FormatVector(_camera.CameraOrigin)}");
         builder.AppendLine($"CameraScale: {_camera.CurrentScale:0.###}");
@@ -161,6 +167,7 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
             Camera = _camera
         };
 
+        _audio.Register(GameAudioCue.BuildingPlace, Content.Load<SoundEffect>("Audio/BuildingPlace"));
         _audio.Register(GameAudioCue.BuildingFinished, Content.Load<SoundEffect>("Audio/BuildingFinished"));
         _audio.Register(GameAudioCue.TrilobiteBirth, Content.Load<SoundEffect>("Audio/TrilobiteBirth"));
         _audio.Register(GameAudioCue.TrilobiteSelected, Content.Load<SoundEffect>("Audio/TrilobiteSelected"));
@@ -171,6 +178,8 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
     protected override void Update(GameTime gameTime)
     {
         _input.BeginFrame();
+        _uiClockMs += gameTime.ElapsedGameTime.TotalMilliseconds;
+        ExpirePendingManualMove();
         SyncSelectionIfRemoved();
 
         if (_input.KeyPressed(Keys.OemTilde))
@@ -375,12 +384,14 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
 
     public void BeginBuildingPlacement(Scaffolding scaffolding)
     {
+        ClearPendingManualMove();
         _floatingBuilding = scaffolding;
         _floatingBuilding.SetDisplayRotationTurns(0);
     }
 
     public void CleanActive(bool closeMenu = false)
     {
+        ClearPendingManualMove();
         _activeBfsDebugField = null;
         _floatingBuilding = null;
         _leftPanActive = false;
@@ -430,7 +441,9 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
         _showRoleLabels = false;
         _tickSpeedMs = GameConstants.TickSpeedNormal;
         _tickAccumulatorMs = 0d;
+        _uiClockMs = 0d;
         _input.EndDrag();
+        ClearPendingManualMove();
         _menu.ResetState();
     }
 
@@ -458,11 +471,13 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
         _roleRadialMenu = null;
         _tickAccumulatorMs = 0d;
         _input.EndDrag();
+        ClearPendingManualMove();
         CleanActive(true);
     }
 
     private void SetSelectedObject(object? selectedObject)
     {
+        ClearPendingManualMove();
         _roleRadialMenu = null;
         _selectionBoxBounds = null;
         _selectionDragActive = false;
@@ -477,10 +492,6 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
         if (selectedObject is not null)
         {
             _menu.OpenPanel();
-            if (selectedObject is not Trilobite)
-            {
-                CenterSelection(selectedObject);
-            }
         }
 
         if (selectedObject is Trilobite)
@@ -491,6 +502,7 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
 
     private void SetSelectedTrilobites(IEnumerable<Trilobite> trilobites, bool openMenuForSingle = false)
     {
+        ClearPendingManualMove();
         var selected = trilobites
             .Where(trilobite => trilobite.Cave is not null)
             .Distinct()
@@ -523,14 +535,7 @@ public sealed partial class GameApp : Microsoft.Xna.Framework.Game
     private void CenterSelection(object selectedObject)
     {
         var menuOffset = _menu.GetOpenPanelWidth(Window.ClientBounds.Size) / 2f;
-        var focusPoint = selectedObject switch
-        {
-            Creature creature => GetCreatureWorldPosition(creature),
-            Building building when building.Location is not null => new Vector2(
-                building.Location.Value.X * TileConstants.TileSize,
-                building.Location.Value.Y * TileConstants.TileSize),
-            _ => Vector2.Zero
-        };
+        var focusPoint = GetFocusWorldPosition(selectedObject);
         _camera.SetOrigin(focusPoint + new Vector2(menuOffset * (1f / _camera.CurrentScale), 0f));
     }
 }
@@ -559,6 +564,7 @@ public sealed partial class GameApp
 
     private void ToggleDebugMenu()
     {
+        ClearPendingManualMove();
         _debugMenuOpen = !_debugMenuOpen;
         if (_debugMenuOpen)
         {
@@ -803,12 +809,18 @@ public sealed partial class GameApp
             _floatingBuilding.TargetBuilding.SetDisplayRotationTurns(nextRotation);
         }
 
+        if (_input.KeyPressed(Keys.Tab))
+        {
+            PlayUiSelectSound();
+            _menu.TogglePanel();
+        }
+
         if (_input.Dragging)
         {
             return;
         }
 
-        var focusTarget = GetSelectedFocusTrilobite();
+        var focusTarget = GetSelectedFocusTarget();
         if (focusTarget is not null && _input.KeyHeld(Keys.F))
         {
             CenterSelection(focusTarget);
@@ -832,6 +844,7 @@ public sealed partial class GameApp
     {
         if (TryHitCreature(point, out var creature))
         {
+            ClearPendingManualMove();
             _roleRadialMenu = null;
             SetSelectedObject(ReferenceEquals(_selectedObject, creature) ? null : creature);
             return;
@@ -839,6 +852,7 @@ public sealed partial class GameApp
 
         if (TryHitBuilding(point, out var building))
         {
+            ClearPendingManualMove();
             if (!BuildMode)
             {
                 CleanActive();
@@ -854,15 +868,23 @@ public sealed partial class GameApp
         var tile = GetTileAtScreenPoint(point);
         if (tile is null)
         {
+            ClearPendingManualMove();
+            if (!BuildMode)
+            {
+                CleanActive();
+            }
+
             return;
         }
 
         if (BuildMode && _floatingBuilding is not null)
         {
+            ClearPendingManualMove();
             var location = GridPoint.Parse(tile.Key);
             if (_session.Cave!.CanBuild(_floatingBuilding, location, true))
             {
                 _session.Cave.Build(_floatingBuilding, location);
+                _audio.Play(GameAudioCue.BuildingPlace);
                 _floatingBuilding = null;
                 CleanActive();
             }
@@ -872,12 +894,25 @@ public sealed partial class GameApp
 
         if (tile.Base == "wall")
         {
+            ClearPendingManualMove();
             _session.MineTile(_session.Cave!, tile.Key, "manual");
             return;
         }
 
-        if (TryHandleManualMove(tile))
+        if (TryConsumePendingManualMove(tile.Key, out var pendingTargets))
         {
+            TryHandleManualMove(tile, pendingTargets);
+            return;
+        }
+
+        if (_selectedTrilobites.Count > 0)
+        {
+            var moveTargets = _selectedTrilobites
+                .Where(trilobite => trilobite.Cave is not null)
+                .Distinct()
+                .ToArray();
+            CleanActive();
+            ArmPendingManualMove(tile.Key, moveTargets);
             return;
         }
 
@@ -886,15 +921,10 @@ public sealed partial class GameApp
 
     private void HandleWorldRightClick(Point point)
     {
+        ClearPendingManualMove();
         if (BuildMode)
         {
             _roleRadialMenu = null;
-            return;
-        }
-
-        if (_selectedTrilobites.Count > 1)
-        {
-            OpenRoleRadialMenu(point.ToVector2(), _selectedTrilobites, anchorToCreature: false);
             return;
         }
 
@@ -902,6 +932,12 @@ public sealed partial class GameApp
         {
             SetSelectedTrilobites([trilobite], openMenuForSingle: false);
             OpenRoleRadialMenu(GetCreatureScreenPosition(trilobite), _selectedTrilobites, anchorToCreature: true);
+            return;
+        }
+
+        if (_selectedTrilobites.Count > 1)
+        {
+            OpenRoleRadialMenu(point.ToVector2(), _selectedTrilobites, anchorToCreature: false);
             return;
         }
 
@@ -939,16 +975,68 @@ public sealed partial class GameApp
         SetSelectedTrilobites(selected, openMenuForSingle: false);
     }
 
-    private bool TryHandleManualMove(Tile tile)
+    private void ArmPendingManualMove(string tileKey, IEnumerable<Trilobite> targets)
     {
-        if (_selectedTrilobites.Count == 0)
+        _pendingManualMoveTargets = targets
+            .Where(trilobite => trilobite.Cave is not null)
+            .Distinct()
+            .ToArray();
+
+        if (_pendingManualMoveTargets.Length == 0)
+        {
+            ClearPendingManualMove();
+            return;
+        }
+
+        _manualMoveDoubleClick.Arm(tileKey, _uiClockMs);
+    }
+
+    private bool TryConsumePendingManualMove(string tileKey, out Trilobite[] targets)
+    {
+        targets = [];
+        if (!_manualMoveDoubleClick.TryConsume(tileKey, _uiClockMs, GameConstants.DoubleClickThresholdMs))
+        {
+            _pendingManualMoveTargets = [];
+            return false;
+        }
+
+        targets = _pendingManualMoveTargets
+            .Where(trilobite => trilobite.Cave is not null)
+            .Distinct()
+            .ToArray();
+        _pendingManualMoveTargets = [];
+        return targets.Length > 0;
+    }
+
+    private void ExpirePendingManualMove()
+    {
+        _manualMoveDoubleClick.Expire(_uiClockMs, GameConstants.DoubleClickThresholdMs);
+        if (!_manualMoveDoubleClick.HasPending)
+        {
+            _pendingManualMoveTargets = [];
+        }
+    }
+
+    private void ClearPendingManualMove()
+    {
+        _manualMoveDoubleClick.Clear();
+        _pendingManualMoveTargets = [];
+    }
+
+    private bool TryHandleManualMove(Tile tile, IEnumerable<Trilobite>? targets = null)
+    {
+        var moveTargets = (targets ?? _selectedTrilobites)
+            .Where(trilobite => trilobite.Cave is not null)
+            .Distinct()
+            .ToArray();
+        if (moveTargets.Length == 0)
         {
             return false;
         }
 
         var destination = GridPoint.Parse(tile.Key);
         var movedAny = false;
-        foreach (var trilobite in _selectedTrilobites.Where(trilobite => trilobite.Cave is not null))
+        foreach (var trilobite in moveTargets)
         {
             movedAny = trilobite.NavigateTo(destination, trilobite.GetBehavior(), clearExisting: true) || movedAny;
         }
@@ -1184,6 +1272,15 @@ public sealed partial class GameApp
         }
         else if (_selectedObject is Building building)
         {
+            if (building is MiningPost miningPost && miningPost.Location is not null)
+            {
+                DrawWorldCircleOutline(
+                    GetPlacedBuildingWorldCenter(miningPost),
+                    miningPost.Radius * TileConstants.TileSize,
+                    new Color(108, 196, 224, 196),
+                    MathF.Max(2f, _camera.CurrentScale * 2f));
+            }
+
             foreach (var tile in building.TileArray)
             {
                 var tilePoint = GridPoint.Parse(tile.Key);
@@ -1210,6 +1307,24 @@ public sealed partial class GameApp
                         origin);
                 }
             }
+        }
+    }
+
+    private void DrawWorldCircleOutline(Vector2 worldCenter, float worldRadius, Color color, float thickness = 2f)
+    {
+        if (worldRadius <= 0f)
+        {
+            return;
+        }
+
+        const int segments = 72;
+        var previousPoint = _camera.WorldToScreen(worldCenter + new Vector2(worldRadius, 0f));
+        for (var index = 1; index <= segments; index++)
+        {
+            var angle = (index / (float)segments) * MathF.Tau;
+            var nextPoint = _camera.WorldToScreen(worldCenter + new Vector2(MathF.Cos(angle) * worldRadius, MathF.Sin(angle) * worldRadius));
+            DrawScreenLine(previousPoint, nextPoint, color, thickness);
+            previousPoint = nextPoint;
         }
     }
 
@@ -1263,7 +1378,7 @@ public sealed partial class GameApp
 
     private void DrawFocusHint()
     {
-        if (!TryGetFocusHintTarget(out _))
+        if (!TryGetFocusHintTarget(out _, out _))
         {
             return;
         }
@@ -1440,31 +1555,36 @@ public sealed partial class GameApp
     {
         var viewport = Window.ClientBounds.Size;
         var overlayBounds = new Rectangle(0, 0, viewport.X, viewport.Y);
-        var panelBounds = GetDebugMenuBounds(viewport);
+        var layout = DebugMenuLayout.Build(viewport);
+        var panelBounds = layout.PanelBounds;
         var pointer = _input.MousePoint;
 
         _spriteBatch.Draw(_rendering.WhitePixel, overlayBounds, new Color(5, 10, 16) * 0.4f);
         _spriteBatch.Draw(_rendering.WhitePixel, panelBounds, new Color(13, 24, 34) * 0.96f);
         DrawScreenBorder(panelBounds, new Color(187, 163, 114), 2);
 
-        _spriteBatch.DrawString(_rendering.UiFont, "Debug", new Vector2(panelBounds.X + 20f, panelBounds.Y + 18f), Color.White);
+        DrawScreenTextFittedCentered("Debug", layout.HeaderBounds, Color.White, _rendering.UiFont, minScale: 0.72f);
+        DrawDebugInfoCard(
+            layout.SummaryBounds,
+            "Run State",
+            BuildDebugSummaryLines(),
+            _rendering.DebugFont,
+            new Color(220, 228, 235),
+            new Color(10, 19, 28),
+            new Color(83, 121, 139));
+        DrawDebugPerformanceCard(layout.PerformanceBounds);
 
-        var stateLine = $"Paused: {(_gamePaused ? "Yes" : "No")}   Danger: {(_session.Danger ? "Yes" : "No")}";
-        var tickLine = $"Tick: {_session.TickCount}   Speed: {(int)_tickSpeedMs} ms";
-        var bfsLine = $"BFS View: {(_activeBfsDebugField ?? "none")} (visible while paused)";
-        var roleLine = $"Role Labels: {(_showRoleLabels ? "On" : "Off")}";
-
-        _spriteBatch.DrawString(_rendering.SmallFont, stateLine, new Vector2(panelBounds.X + 20f, panelBounds.Y + 58f), new Color(215, 222, 228));
-        _spriteBatch.DrawString(_rendering.SmallFont, tickLine, new Vector2(panelBounds.X + 20f, panelBounds.Y + 80f), new Color(215, 222, 228));
-        _spriteBatch.DrawString(_rendering.SmallFont, bfsLine, new Vector2(panelBounds.X + 20f, panelBounds.Y + 102f), new Color(171, 198, 208));
-        _spriteBatch.DrawString(_rendering.SmallFont, roleLine, new Vector2(panelBounds.X + 20f, panelBounds.Y + 124f), new Color(171, 198, 208));
-
-        _spriteBatch.DrawString(_rendering.SmallFont, "Quick Controls", new Vector2(panelBounds.X + 20f, panelBounds.Y + 150f), new Color(255, 214, 150));
-        _spriteBatch.DrawString(_rendering.SmallFont, "Game Loop Speed", new Vector2(panelBounds.X + 20f, panelBounds.Y + 238f), new Color(255, 214, 150));
-        _spriteBatch.DrawString(_rendering.SmallFont, "BFS Debug", new Vector2(panelBounds.X + 20f, panelBounds.Y + 322f), new Color(255, 214, 150));
-        _spriteBatch.DrawString(_rendering.SmallFont, "Visual Debug", new Vector2(panelBounds.X + 20f, panelBounds.Y + 420f), new Color(255, 214, 150));
-        _spriteBatch.DrawString(_rendering.SmallFont, "Actions", new Vector2(panelBounds.X + 20f, panelBounds.Y + 486f), new Color(255, 214, 150));
-        _spriteBatch.DrawString(_rendering.SmallFont, "` closes this panel. Hotkeys still work.", new Vector2(panelBounds.X + 20f, panelBounds.Bottom - 28f), new Color(141, 183, 199));
+        DrawDebugSectionLabel(layout.QuickControlsLabelBounds, "Quick Controls");
+        DrawDebugSectionLabel(layout.SpeedLabelBounds, "Game Loop Speed");
+        DrawDebugSectionLabel(layout.BfsLabelBounds, "BFS Debug");
+        DrawDebugSectionLabel(layout.VisualLabelBounds, "Visual Debug");
+        DrawDebugSectionLabel(layout.ActionsLabelBounds, "Actions");
+        DrawWrappedScreenText(
+            ["` closes this panel. Hotkeys still work."],
+            layout.FooterBounds,
+            new Color(141, 183, 199),
+            _rendering.SmallFont,
+            lineGap: 1);
 
         foreach (var button in BuildDebugMenuButtons(viewport))
         {
@@ -1499,10 +1619,130 @@ public sealed partial class GameApp
         _spriteBatch.Draw(_rendering.WhitePixel, button.Bounds, fill);
         DrawScreenBorder(button.Bounds, border, 2);
 
-        var font = button.Bounds.Height >= 40 ? _rendering.SmallFont : _rendering.DebugFont;
-        var textSize = font.MeasureString(button.Label);
-        var textPosition = new Vector2(button.Bounds.Center.X, button.Bounds.Center.Y) - (textSize / 2f);
-        _spriteBatch.DrawString(font, button.Label, textPosition, textColor);
+        var textBounds = new Rectangle(button.Bounds.X + 8, button.Bounds.Y + 4, Math.Max(0, button.Bounds.Width - 16), Math.Max(0, button.Bounds.Height - 8));
+        DrawScreenTextFittedCentered(button.Label, textBounds, textColor, _rendering.SmallFont, minScale: 0.64f);
+    }
+
+    private void DrawDebugSectionLabel(Rectangle bounds, string label)
+    {
+        DrawScreenTextFittedCentered(label, bounds, new Color(255, 214, 150), _rendering.SmallFont, minScale: 0.72f);
+    }
+
+    private void DrawDebugInfoCard(
+        Rectangle bounds,
+        string title,
+        IReadOnlyList<string> lines,
+        SpriteFont font,
+        Color textColor,
+        Color fill,
+        Color border)
+    {
+        _spriteBatch.Draw(_rendering.WhitePixel, bounds, fill);
+        DrawScreenBorder(bounds, border, 1);
+
+        var titleBounds = new Rectangle(bounds.X + 12, bounds.Y + 8, Math.Max(0, bounds.Width - 24), 20);
+        DrawScreenTextFittedCentered(title, titleBounds, new Color(255, 214, 150), _rendering.SmallFont, minScale: 0.72f);
+
+        var textBounds = new Rectangle(
+            bounds.X + 12,
+            titleBounds.Bottom + 8,
+            Math.Max(0, bounds.Width - 24),
+            Math.Max(0, bounds.Bottom - titleBounds.Bottom - 18));
+        DrawWrappedScreenText(lines, textBounds, textColor, font, lineGap: 1);
+    }
+
+    private void DrawDebugPerformanceCard(Rectangle bounds)
+    {
+        _spriteBatch.Draw(_rendering.WhitePixel, bounds, new Color(9, 17, 25));
+        DrawScreenBorder(bounds, new Color(74, 109, 125), 1);
+
+        var titleBounds = new Rectangle(bounds.X + 12, bounds.Y + 8, Math.Max(0, bounds.Width - 24), 20);
+        DrawScreenTextFittedCentered("Performance", titleBounds, new Color(255, 214, 150), _rendering.SmallFont, minScale: 0.72f);
+
+        var contentBounds = new Rectangle(
+            bounds.X + 12,
+            titleBounds.Bottom + 8,
+            Math.Max(0, bounds.Width - 24),
+            Math.Max(0, bounds.Bottom - titleBounds.Bottom - 18));
+
+        var workBounds = new Rectangle(contentBounds.X, contentBounds.Y, contentBounds.Width, Math.Min(24, contentBounds.Height));
+        DrawScreenTextFittedLeft(
+            _session.TickProfiler.Last.DescribeDominantWorkShort(),
+            workBounds,
+            new Color(203, 224, 233),
+            _rendering.SmallFont,
+            minScale: 0.8f);
+
+        var metricsBounds = new Rectangle(
+            contentBounds.X,
+            workBounds.Bottom + 6,
+            contentBounds.Width,
+            Math.Max(0, contentBounds.Bottom - workBounds.Bottom - 6));
+        var rowCount = 5;
+        var rowHeight = Math.Max(18, metricsBounds.Height / rowCount);
+        var gap = 12;
+        var leftWidth = Math.Max(0, (metricsBounds.Width - gap) / 2);
+        var rightWidth = Math.Max(0, metricsBounds.Width - leftWidth - gap);
+        var average = _session.TickProfiler.Average;
+        var last = _session.TickProfiler.Last;
+
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+        {
+            var rowY = metricsBounds.Y + (rowIndex * rowHeight);
+            var rowBounds = new Rectangle(
+                metricsBounds.X,
+                rowY,
+                metricsBounds.Width,
+                Math.Max(1, rowIndex == rowCount - 1 ? metricsBounds.Bottom - rowY : rowHeight));
+
+            switch (rowIndex)
+            {
+                case 0:
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X, rowBounds.Y, leftWidth, rowBounds.Height), "Avg total", $"{average.TotalMs:0.00} ms");
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X + leftWidth + gap, rowBounds.Y, rightWidth, rowBounds.Height), "Avg BFS", $"{average.TotalBfsMs:0.00} ms");
+                    break;
+                case 1:
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X, rowBounds.Y, leftWidth, rowBounds.Height), "Avg tri", $"{average.TrilobiteMoveMs:0.00} ms");
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X + leftWidth + gap, rowBounds.Y, rightWidth, rowBounds.Height), "Avg ene", $"{average.EnemyMoveMs:0.00} ms");
+                    break;
+                case 2:
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X, rowBounds.Y, leftWidth, rowBounds.Height), "Avg bld", $"{average.BuildingTickMs:0.00} ms");
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X + leftWidth + gap, rowBounds.Y, rightWidth, rowBounds.Height), "Last total", $"{last.TotalMs:0.00} ms");
+                    break;
+                case 3:
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X, rowBounds.Y, leftWidth, rowBounds.Height), "Alloc", FormatByteCount(last.AllocatedBytes));
+                    DrawDebugMetricCell(new Rectangle(rowBounds.X + leftWidth + gap, rowBounds.Y, rightWidth, rowBounds.Height), "GC", $"{last.Gen0Collections}/{last.Gen1Collections}/{last.Gen2Collections}");
+                    break;
+                default:
+                    DrawDebugMetricCell(rowBounds, "Counts", $"{last.TrilobiteCount} tri  {last.EnemyCount} ene  {last.BuildingCount} bld");
+                    break;
+            }
+        }
+    }
+
+    private void DrawDebugMetricCell(Rectangle bounds, string label, string value)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var labelWidth = Math.Min(74, Math.Max(44, bounds.Width / 2));
+        var labelBounds = new Rectangle(bounds.X, bounds.Y, labelWidth, bounds.Height);
+        var valueBounds = new Rectangle(bounds.X + labelWidth + 6, bounds.Y, Math.Max(0, bounds.Width - labelWidth - 6), bounds.Height);
+        DrawScreenTextFittedLeft(label, labelBounds, new Color(156, 187, 199), _rendering.SmallFont, minScale: 0.8f);
+        DrawScreenTextFittedLeft(value, valueBounds, new Color(226, 236, 241), _rendering.SmallFont, minScale: 0.8f);
+    }
+
+    private IReadOnlyList<string> BuildDebugSummaryLines()
+    {
+        return
+        [
+            $"Paused: {(_gamePaused ? "Yes" : "No")}    Danger: {(_session.Danger ? "Yes" : "No")}    Tick: {_session.TickCount}",
+            $"Tick Speed: {(int)_tickSpeedMs} ms",
+            $"BFS View: {(_activeBfsDebugField ?? "none")} (visible while paused)",
+            $"Role Labels: {(_showRoleLabels ? "On" : "Off")}"
+        ];
     }
 
     private IReadOnlyList<RoleRadialButton> BuildRoleRadialButtons(RoleRadialMenuState radialMenu)
@@ -1517,10 +1757,7 @@ public sealed partial class GameApp
             ("fighter", "Fighter")
         };
 
-        var uniformAssignment = radialMenu.Targets
-            .Select(trilobite => trilobite.Assignment)
-            .Distinct(StringComparer.Ordinal)
-            .SingleOrDefault();
+        var uniformAssignment = RoleSelectionState.GetUniformAssignment(radialMenu.Targets);
 
         var buttons = new List<RoleRadialButton>(roles.Length);
         for (var index = 0; index < roles.Length; index++)
@@ -1633,6 +1870,27 @@ public sealed partial class GameApp
         _spriteBatch.Draw(_rendering.WhitePixel, new Rectangle(bounds.X, bounds.Bottom - thickness, bounds.Width, thickness), color);
         _spriteBatch.Draw(_rendering.WhitePixel, new Rectangle(bounds.X, bounds.Y, thickness, bounds.Height), color);
         _spriteBatch.Draw(_rendering.WhitePixel, new Rectangle(bounds.Right - thickness, bounds.Y, thickness, bounds.Height), color);
+    }
+
+    private void DrawScreenLine(Vector2 start, Vector2 end, Color color, float thickness = 1f)
+    {
+        var delta = end - start;
+        var length = delta.Length();
+        if (length <= 0.5f)
+        {
+            return;
+        }
+
+        _spriteBatch.Draw(
+            _rendering.WhitePixel,
+            start,
+            null,
+            color,
+            MathF.Atan2(delta.Y, delta.X),
+            new Vector2(0f, 0.5f),
+            new Vector2(length, MathF.Max(1f, thickness)),
+            SpriteEffects.None,
+            0f);
     }
 
     private void DrawGearIcon(Rectangle bounds, Color color)
@@ -1781,6 +2039,147 @@ public sealed partial class GameApp
         _spriteBatch.DrawString(font, textToDraw, position, color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
     }
 
+    private void DrawWrappedScreenText(IEnumerable<string> paragraphs, Rectangle bounds, Color color, SpriteFont font, int lineGap = 2)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var lineAdvance = Math.Max(1, font.LineSpacing + lineGap);
+        var maxLines = Math.Max(1, (bounds.Height + lineGap) / lineAdvance);
+        var lines = WrapScreenText(font, paragraphs, bounds.Width, maxLines);
+        var y = bounds.Y;
+        foreach (var line in lines)
+        {
+            _spriteBatch.DrawString(font, line, new Vector2(bounds.X, y), color);
+            y += lineAdvance;
+            if (y > bounds.Bottom)
+            {
+                break;
+            }
+        }
+    }
+
+    private void DrawScreenTextFittedLeft(string text, Rectangle bounds, Color color, SpriteFont font, float minScale = 0.72f)
+    {
+        if (string.IsNullOrWhiteSpace(text) || bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var scale = 1f;
+        var textToDraw = text;
+        var measure = font.MeasureString(textToDraw);
+        if (measure.Y <= 0f)
+        {
+            return;
+        }
+
+        scale = MathF.Min(scale, bounds.Height / measure.Y);
+        if (measure.X > bounds.Width)
+        {
+            var widthScale = bounds.Width / measure.X;
+            if (widthScale >= minScale)
+            {
+                scale = MathF.Min(scale, widthScale);
+            }
+            else
+            {
+                scale = MathF.Min(scale, minScale);
+                textToDraw = FitScreenTextToWidth(font, textToDraw, bounds.Width / scale);
+                measure = font.MeasureString(textToDraw);
+            }
+        }
+
+        scale = MathF.Min(scale, 1f);
+        var scaledSize = measure * scale;
+        var position = new Vector2(
+            bounds.X,
+            bounds.Y + MathF.Max(0f, (bounds.Height - scaledSize.Y) / 2f));
+        _spriteBatch.DrawString(font, textToDraw, position, color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+    }
+
+    private static IReadOnlyList<string> WrapScreenText(SpriteFont font, IEnumerable<string> paragraphs, float maxWidth, int maxLines)
+    {
+        if (maxWidth <= 0f || maxLines <= 0)
+        {
+            return [];
+        }
+
+        var lines = new List<string>();
+        var truncated = false;
+        foreach (var paragraph in paragraphs)
+        {
+            if (lines.Count >= maxLines)
+            {
+                truncated = true;
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(paragraph))
+            {
+                lines.Add(string.Empty);
+                continue;
+            }
+
+            var words = paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var current = string.Empty;
+            foreach (var word in words)
+            {
+                if (lines.Count >= maxLines)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(current))
+                {
+                    if (font.MeasureString(word).X > maxWidth)
+                    {
+                        lines.Add(FitScreenTextToWidth(font, word, maxWidth));
+                        continue;
+                    }
+
+                    current = word;
+                    continue;
+                }
+
+                var candidate = $"{current} {word}";
+                if (font.MeasureString(candidate).X <= maxWidth)
+                {
+                    current = candidate;
+                    continue;
+                }
+
+                lines.Add(current);
+                current = word;
+            }
+
+            if (!string.IsNullOrEmpty(current) && lines.Count < maxLines)
+            {
+                lines.Add(current);
+            }
+            else if (!string.IsNullOrEmpty(current))
+            {
+                truncated = true;
+            }
+        }
+
+        if (lines.Count > maxLines)
+        {
+            lines = lines.Take(maxLines).ToList();
+            truncated = true;
+        }
+
+        if (truncated && lines.Count > 0)
+        {
+            lines[^1] = FitScreenTextToWidth(font, $"{lines[^1].TrimEnd()}...", maxWidth);
+        }
+
+        return lines;
+    }
+
     private static string FitScreenTextToWidth(SpriteFont font, string text, float maxWidth)
     {
         if (string.IsNullOrEmpty(text) || maxWidth <= 0f)
@@ -1870,101 +2269,95 @@ public sealed partial class GameApp
 
     private Rectangle GetDebugMenuBounds(Point viewport)
     {
-        var width = Math.Min(430, Math.Max(340, viewport.X - 48));
-        var height = Math.Min(610, Math.Max(520, viewport.Y - 48));
-        return new Rectangle(24, 24, width, height);
+        return DebugMenuLayout.Build(viewport).PanelBounds;
     }
 
     private IReadOnlyList<DebugMenuButton> BuildDebugMenuButtons(Point viewport)
     {
-        var panelBounds = GetDebugMenuBounds(viewport);
-        var contentX = panelBounds.X + 20;
-        var contentWidth = panelBounds.Width - 40;
-        const int gap = 10;
-        const int buttonHeight = 40;
-
-        var thirdWidth = (contentWidth - (gap * 2)) / 3;
-        var quarterWidth = (contentWidth - (gap * 3)) / 4;
-        var halfWidth = (contentWidth - gap) / 2;
+        var layout = DebugMenuLayout.Build(viewport);
+        var quickButtons = DebugMenuLayout.SplitRow(layout.QuickControlsRowBounds, 3, layout.ButtonGap);
+        var speedButtons = DebugMenuLayout.SplitRow(layout.SpeedRowBounds, 4, layout.ButtonGap);
+        var bfsTopButtons = DebugMenuLayout.SplitRow(layout.BfsTopRowBounds, 2, layout.ButtonGap);
+        var bfsBottomButtons = DebugMenuLayout.SplitRow(layout.BfsBottomRowBounds, 2, layout.ButtonGap);
 
         return
         [
             new DebugMenuButton(
                 DebugMenuAction.TogglePause,
                 _gamePaused ? "Resume" : "Pause",
-                new Rectangle(contentX, panelBounds.Y + 152, thirdWidth, buttonHeight),
+                quickButtons[0],
                 true,
                 false),
             new DebugMenuButton(
                 DebugMenuAction.SingleTick,
                 "Step Tick",
-                new Rectangle(contentX + thirdWidth + gap, panelBounds.Y + 152, thirdWidth, buttonHeight),
+                quickButtons[1],
                 true,
                 false),
             new DebugMenuButton(
                 DebugMenuAction.Close,
                 "Close",
-                new Rectangle(contentX + (thirdWidth * 2) + (gap * 2), panelBounds.Y + 152, thirdWidth, buttonHeight),
+                quickButtons[2],
                 true,
                 false),
             new DebugMenuButton(
                 DebugMenuAction.SpeedSlow,
                 "500 ms",
-                new Rectangle(contentX, panelBounds.Y + 240, quarterWidth, buttonHeight),
+                speedButtons[0],
                 true,
                 TickSpeedMatches(GameConstants.TickSpeedSlow)),
             new DebugMenuButton(
                 DebugMenuAction.SpeedNormal,
                 "250 ms",
-                new Rectangle(contentX + quarterWidth + gap, panelBounds.Y + 240, quarterWidth, buttonHeight),
+                speedButtons[1],
                 true,
                 TickSpeedMatches(GameConstants.TickSpeedNormal)),
             new DebugMenuButton(
                 DebugMenuAction.SpeedFast,
                 "100 ms",
-                new Rectangle(contentX + (quarterWidth * 2) + (gap * 2), panelBounds.Y + 240, quarterWidth, buttonHeight),
+                speedButtons[2],
                 true,
                 TickSpeedMatches(GameConstants.TickSpeedFast)),
             new DebugMenuButton(
                 DebugMenuAction.SpeedFastest,
                 "50 ms",
-                new Rectangle(contentX + (quarterWidth * 3) + (gap * 3), panelBounds.Y + 240, quarterWidth, buttonHeight),
+                speedButtons[3],
                 true,
                 TickSpeedMatches(GameConstants.TickSpeedFastest)),
             new DebugMenuButton(
                 DebugMenuAction.ShowQueenField,
                 "Queen",
-                new Rectangle(contentX, panelBounds.Y + 324, halfWidth, buttonHeight),
+                bfsTopButtons[0],
                 true,
                 string.Equals(_activeBfsDebugField, "queen", StringComparison.Ordinal)),
             new DebugMenuButton(
                 DebugMenuAction.ShowEnemyField,
                 "Enemy",
-                new Rectangle(contentX + halfWidth + gap, panelBounds.Y + 324, halfWidth, buttonHeight),
+                bfsTopButtons[1],
                 true,
                 string.Equals(_activeBfsDebugField, "enemy", StringComparison.Ordinal)),
             new DebugMenuButton(
                 DebugMenuAction.ShowColonyField,
                 "Colony",
-                new Rectangle(contentX, panelBounds.Y + 374, halfWidth, buttonHeight),
+                bfsBottomButtons[0],
                 true,
                 string.Equals(_activeBfsDebugField, "colony", StringComparison.Ordinal)),
             new DebugMenuButton(
                 DebugMenuAction.ClearField,
                 "Clear",
-                new Rectangle(contentX + halfWidth + gap, panelBounds.Y + 374, halfWidth, buttonHeight),
+                bfsBottomButtons[1],
                 true,
                 _activeBfsDebugField is null),
             new DebugMenuButton(
                 DebugMenuAction.ToggleRoleLabels,
                 _showRoleLabels ? "Hide Role Labels" : "Show Role Labels",
-                new Rectangle(contentX, panelBounds.Y + 446, contentWidth, buttonHeight),
+                layout.VisualRowBounds,
                 true,
                 _showRoleLabels),
             new DebugMenuButton(
                 DebugMenuAction.SpawnEnemy,
                 "Spawn Debug Enemy",
-                new Rectangle(contentX, panelBounds.Y + 512, contentWidth, buttonHeight),
+                layout.ActionsRowBounds,
                 true,
                 false)
         ];
@@ -1992,33 +2385,57 @@ public sealed partial class GameApp
             ?? [];
     }
 
-    private Trilobite? GetSelectedFocusTrilobite()
+    private object? GetSelectedFocusTarget()
     {
         if (_selectedTrilobites.Count == 1)
         {
             return _selectedTrilobites.First();
         }
 
-        return _selectedObject as Trilobite;
+        return _selectedObject is Trilobite or Building ? _selectedObject : null;
     }
 
-    private bool TryGetFocusHintTarget(out Trilobite trilobite)
+    private bool TryGetFocusHintTarget(out object focusTarget, out Vector2 screenPosition)
     {
-        trilobite = GetSelectedFocusTrilobite()!;
-        if (trilobite is null || trilobite.Cave is null || _input.KeyHeld(Keys.F))
+        focusTarget = GetSelectedFocusTarget()!;
+        screenPosition = Vector2.Zero;
+        if (focusTarget is null || _input.KeyHeld(Keys.F))
         {
             return false;
         }
 
+        switch (focusTarget)
+        {
+            case Creature creature when creature.Cave is null:
+            case Building { Cave: null }:
+            case Building { Location: null }:
+                return false;
+        }
+
         var viewport = Window.ClientBounds.Size;
         var menuWidth = _menu.GetOpenPanelWidth(viewport);
-        var screenPosition = GetCreatureScreenPosition(trilobite);
+        screenPosition = GetFocusScreenPosition(focusTarget);
         if (SelectionFocusLayout.IsNearGameplayCenter(screenPosition, viewport, menuWidth))
         {
             return false;
         }
 
         return !SelectionFocusLayout.IsInsideGameplayBounds(screenPosition, viewport, menuWidth);
+    }
+
+    private Vector2 GetFocusWorldPosition(object focusTarget)
+    {
+        return focusTarget switch
+        {
+            Creature creature => GetCreatureWorldPosition(creature),
+            Building building when building.Location is not null => GetPlacedBuildingWorldCenter(building),
+            _ => Vector2.Zero
+        };
+    }
+
+    private Vector2 GetFocusScreenPosition(object focusTarget)
+    {
+        return _camera.WorldToScreen(GetFocusWorldPosition(focusTarget));
     }
 
     private Vector2 GetCreatureWorldPosition(Creature creature)
@@ -2055,6 +2472,26 @@ public sealed partial class GameApp
     private static string FormatVector(Vector2 vector)
     {
         return $"{vector.X:0.###}, {vector.Y:0.###}";
+    }
+
+    private static string FormatByteCount(long byteCount)
+    {
+        if (byteCount >= 1024 * 1024)
+        {
+            return $"{byteCount / (1024d * 1024d):0.00} MB";
+        }
+
+        if (byteCount >= 1024)
+        {
+            return $"{byteCount / 1024d:0.0} KB";
+        }
+
+        return $"{byteCount} B";
+    }
+
+    private static string FormatTickProfile(TickTimingSnapshot snapshot, string label)
+    {
+        return $"{label}: total {snapshot.TotalMs:0.00} ms, bfs {snapshot.TotalBfsMs:0.00} ms, trilobites {snapshot.TrilobiteMoveMs:0.00} ms, enemies {snapshot.EnemyMoveMs:0.00} ms, buildings {snapshot.BuildingTickMs:0.00} ms, alloc {FormatByteCount(snapshot.AllocatedBytes)}, gc {snapshot.Gen0Collections}/{snapshot.Gen1Collections}/{snapshot.Gen2Collections}, counts {snapshot.TrilobiteCount}/{snapshot.EnemyCount}/{snapshot.BuildingCount}, work {snapshot.DescribeDominantWork()}";
     }
 
     private string DescribeSelectedObject()
@@ -2130,6 +2567,8 @@ public sealed partial class GameApp
         builder.AppendLine($"Trilobites: {cave.Trilobites.Count}");
         builder.AppendLine($"Enemies: {cave.Enemies.Count}");
         builder.AppendLine($"Buildings: {cave.Buildings.Count}");
+        builder.AppendLine($"TickProfilerLast: {FormatTickProfile(_session.TickProfiler.Last, "last")}");
+        builder.AppendLine($"TickProfilerAvg: {FormatTickProfile(_session.TickProfiler.Average, "avg")}");
 
         var queen = cave.GetQueenBuilding();
         builder.AppendLine(queen is null

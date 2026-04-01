@@ -178,6 +178,11 @@
 /processor:SoundEffectProcessor
 /build:Audio/BuildingFinished.wav
 
+#begin Audio/BuildingPlace.mp3
+/importer:Mp3Importer
+/processor:SoundEffectProcessor
+/build:Audio/BuildingPlace.mp3
+
 #begin Audio/TrilobiteBirth.wav
 /importer:WavImporter
 /processor:SoundEffectProcessor

@@ -11,4 +11,5 @@ public static class GameConstants
     public const float MaxScale = 2.5f;
     public const float KeyboardPanSpeedPixelsPerSecond = 800f;
     public const float DragThresholdPixels = 10f;
+    public const double DoubleClickThresholdMs = 300d;
 }

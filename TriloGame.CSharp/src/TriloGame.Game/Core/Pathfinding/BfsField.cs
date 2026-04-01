@@ -7,6 +7,17 @@ namespace TriloGame.Game.Core.Pathfinding;
 
 public sealed class BfsField
 {
+    private int[] _values = [];
+    private bool[] _covered = [];
+    private bool[] _nextCovered = [];
+    private bool[] _blocked = [];
+    private bool[] _seeded = [];
+    private bool[] _queued = [];
+    private readonly Queue<int> _queue = [];
+    private readonly List<int> _seedIds = [];
+    private bool _fieldCacheDirty = true;
+    private int _coverageCount;
+
     public BfsField(string name = "", string type = "shared", Cave? cave = null, Building? ownerBuilding = null)
     {
         Name = name;
@@ -19,6 +30,7 @@ public sealed class BfsField
         UpdatedCreatures = [];
         TrackedBuildings = [];
         TrackedCreatures = [];
+        EnsureCapacity(cave?.TileCapacity ?? 0);
     }
 
     public string Name { get; }
@@ -46,6 +58,8 @@ public sealed class BfsField
     public void SetCave(Cave? cave)
     {
         Cave = cave;
+        EnsureCapacity(cave?.TileCapacity ?? 0);
+        _fieldCacheDirty = true;
     }
 
     public void SetOwnerBuilding(Building? building)
@@ -58,6 +72,8 @@ public sealed class BfsField
         Field = field is null
             ? new Dictionary<string, int>(StringComparer.Ordinal)
             : new Dictionary<string, int>(field, StringComparer.Ordinal);
+        _fieldCacheDirty = false;
+        ImportField(Field);
     }
 
     public Dictionary<string, int> CommitField(Dictionary<string, int> field)
@@ -141,7 +157,31 @@ public sealed class BfsField
 
     public Dictionary<string, int> GetField(bool refresh = true)
     {
-        return refresh ? Refresh() : Field;
+        if (refresh)
+        {
+            Refresh();
+        }
+
+        if (!_fieldCacheDirty)
+        {
+            return Field;
+        }
+
+        var field = new Dictionary<string, int>(Math.Max(0, _coverageCount), StringComparer.Ordinal);
+        if (Cave is not null)
+        {
+            foreach (var tile in Cave.GetTiles())
+            {
+                if (_covered[tile.Id])
+                {
+                    field[tile.Key] = _values[tile.Id];
+                }
+            }
+        }
+
+        Field = field;
+        _fieldCacheDirty = false;
+        return Field;
     }
 
     public bool HasActiveBuildingTarget()
@@ -162,6 +202,60 @@ public sealed class BfsField
         return Cave.GetTile(tileKey);
     }
 
+    private void EnsureCapacity(int requiredCapacity)
+    {
+        if (requiredCapacity <= _values.Length)
+        {
+            return;
+        }
+
+        var oldLength = _values.Length;
+        var newLength = Math.Max(requiredCapacity, Math.Max(8, oldLength * 2));
+
+        Array.Resize(ref _values, newLength);
+        Array.Fill(_values, int.MaxValue, oldLength, newLength - oldLength);
+        Array.Resize(ref _covered, newLength);
+        Array.Resize(ref _nextCovered, newLength);
+        Array.Resize(ref _blocked, newLength);
+        Array.Resize(ref _seeded, newLength);
+        Array.Resize(ref _queued, newLength);
+    }
+
+    private void ImportField(Dictionary<string, int> field)
+    {
+        if (Cave is null)
+        {
+            _coverageCount = 0;
+            return;
+        }
+
+        EnsureCapacity(Cave.TileCapacity);
+        Array.Clear(_covered, 0, _covered.Length);
+        _coverageCount = 0;
+
+        foreach (var tile in Cave.GetTiles())
+        {
+            _values[tile.Id] = int.MaxValue;
+        }
+
+        foreach (var pair in field)
+        {
+            var tile = Cave.GetTile(pair.Key);
+            if (tile is null)
+            {
+                continue;
+            }
+
+            if (!_covered[tile.Id])
+            {
+                _coverageCount++;
+            }
+
+            _covered[tile.Id] = true;
+            _values[tile.Id] = pair.Value;
+        }
+    }
+
     private bool IsTileInCoverage(Tile? tile)
     {
         if (tile is null || Cave is null)
@@ -177,51 +271,74 @@ public sealed class BfsField
         return Cave.IsTileRevealed(tile);
     }
 
-    private IReadOnlyList<Tile> GetCoverageTiles()
+    private void RefreshCoverageState(bool resetValues)
     {
         if (Cave is null)
         {
-            return [];
+            _coverageCount = 0;
+            Array.Clear(_covered, 0, _covered.Length);
+            return;
         }
+
+        EnsureCapacity(Cave.TileCapacity);
+        Array.Clear(_nextCovered, 0, _nextCovered.Length);
 
         if (string.Equals(Type, "building", StringComparison.Ordinal))
         {
-            return HasActiveBuildingTarget() ? Cave.GetReachableTiles() : [];
-        }
-
-        return Cave.GetTiles().Where(IsTileInCoverage).ToArray();
-    }
-
-    private Dictionary<string, int> CreateBaseField()
-    {
-        var field = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var tile in GetCoverageTiles())
-        {
-            field[tile.Key] = int.MaxValue;
-        }
-
-        return field;
-    }
-
-    private Dictionary<string, int> SyncCoverage(Dictionary<string, int> field)
-    {
-        foreach (var tileKey in field.Keys.ToArray())
-        {
-            if (!IsTileInCoverage(GetTile(tileKey)))
+            if (HasActiveBuildingTarget())
             {
-                field.Remove(tileKey);
+                foreach (var tile in Cave.GetReachableTiles())
+                {
+                    _nextCovered[tile.Id] = true;
+                }
+            }
+        }
+        else
+        {
+            foreach (var tile in Cave.GetTiles())
+            {
+                if (IsTileInCoverage(tile))
+                {
+                    _nextCovered[tile.Id] = true;
+                }
             }
         }
 
-        foreach (var tile in GetCoverageTiles())
+        _coverageCount = 0;
+        foreach (var tile in Cave.GetTiles())
         {
-            field.TryAdd(tile.Key, int.MaxValue);
+            var tileId = tile.Id;
+            var shouldCover = _nextCovered[tileId];
+            _covered[tileId] = shouldCover;
+            if (shouldCover)
+            {
+                _coverageCount++;
+                if (resetValues)
+                {
+                    _values[tileId] = int.MaxValue;
+                }
+            }
+            else
+            {
+                _values[tileId] = int.MaxValue;
+            }
         }
 
-        return field;
+        _fieldCacheDirty = true;
     }
 
-    private void AddAdjacentPassableSeeds(Tile? tile, HashSet<string> blockedKeys, HashSet<string> seedKeys)
+    private void AddSeed(Tile tile)
+    {
+        if (_seeded[tile.Id])
+        {
+            return;
+        }
+
+        _seeded[tile.Id] = true;
+        _seedIds.Add(tile.Id);
+    }
+
+    private void AddAdjacentPassableSeeds(Tile? tile)
     {
         if (tile is null)
         {
@@ -230,16 +347,16 @@ public sealed class BfsField
 
         foreach (var neighbor in tile.Neighbors)
         {
-            if (!IsTileInCoverage(neighbor) || !neighbor.CreatureFits() || blockedKeys.Contains(neighbor.Key))
+            if (!_covered[neighbor.Id] || !neighbor.CreatureFits() || _blocked[neighbor.Id])
             {
                 continue;
             }
 
-            seedKeys.Add(neighbor.Key);
+            AddSeed(neighbor);
         }
     }
 
-    private void AddBuildingTargets(Building? building, HashSet<string> blockedKeys, HashSet<string> seedKeys, bool blockPassableTiles = false)
+    private void AddBuildingTargets(Building? building, bool blockPassableTiles = false)
     {
         if (building is null || building.TileArray.Count == 0)
         {
@@ -254,64 +371,63 @@ public sealed class BfsField
                 continue;
             }
 
-            blockedKeys.Add(tile.Key);
-            AddAdjacentPassableSeeds(tile, blockedKeys, seedKeys);
+            _blocked[tile.Id] = true;
+            AddAdjacentPassableSeeds(tile);
         }
     }
 
-    private HashSet<string> BuildBuildingSeedKeys(Building? building)
+    private void AddBuildingSeedIds(Building? building)
     {
-        var seedKeys = new HashSet<string>(StringComparer.Ordinal);
         if (building is null || building.TileArray.Count == 0)
         {
-            return seedKeys;
+            return;
         }
 
         foreach (var tile in building.TileArray)
         {
-            if (tile.CreatureFits() && IsTileInCoverage(tile))
+            if (tile.CreatureFits() && _covered[tile.Id])
             {
-                seedKeys.Add(tile.Key);
+                AddSeed(tile);
             }
         }
 
-        if (seedKeys.Count > 0)
+        if (_seedIds.Count > 0)
         {
-            return seedKeys;
+            return;
         }
 
         foreach (var tile in building.TileArray)
         {
             foreach (var neighbor in tile.Neighbors)
             {
-                if (neighbor.CreatureFits() && IsTileInCoverage(neighbor))
+                if (neighbor.CreatureFits() && _covered[neighbor.Id])
                 {
-                    seedKeys.Add(neighbor.Key);
+                    AddSeed(neighbor);
                 }
             }
         }
-
-        return seedKeys;
     }
 
-    private (HashSet<string> BlockedKeys, HashSet<string> SeedKeys) BuildSnapshot()
+    private void BuildSnapshot()
     {
-        var blockedKeys = new HashSet<string>(StringComparer.Ordinal);
-        var seedKeys = new HashSet<string>(StringComparer.Ordinal);
         var trackedBuildings = new List<Building>();
         var trackedCreatures = new List<Creature>();
+
+        Array.Clear(_blocked, 0, _blocked.Length);
+        Array.Clear(_seeded, 0, _seeded.Length);
+        _seedIds.Clear();
 
         if (Cave is null)
         {
             SetTrackedTargets();
-            return (blockedKeys, seedKeys);
+            return;
         }
 
         foreach (var tile in Cave.GetTiles())
         {
-            if (!IsTileInCoverage(tile) || !tile.CreatureFits())
+            if (!_covered[tile.Id] || !tile.CreatureFits())
             {
-                blockedKeys.Add(tile.Key);
+                _blocked[tile.Id] = true;
             }
         }
 
@@ -320,15 +436,12 @@ public sealed class BfsField
             if (HasActiveBuildingTarget())
             {
                 trackedBuildings.Add(OwnerBuilding!);
-                foreach (var seedKey in BuildBuildingSeedKeys(OwnerBuilding))
-                {
-                    seedKeys.Add(seedKey);
-                }
+                AddBuildingSeedIds(OwnerBuilding);
             }
         }
         else if (string.Equals(Type, "enemy", StringComparison.Ordinal))
         {
-            foreach (var creature in Cave.Enemies)
+            foreach (var creature in Cave.GetEnemyList())
             {
                 trackedCreatures.Add(creature);
                 var tile = GetTile(creature.Location.ToString());
@@ -337,13 +450,13 @@ public sealed class BfsField
                     continue;
                 }
 
-                blockedKeys.Add(tile.Key);
-                AddAdjacentPassableSeeds(tile, blockedKeys, seedKeys);
+                _blocked[tile.Id] = true;
+                AddAdjacentPassableSeeds(tile);
             }
         }
         else if (string.Equals(Type, "colony", StringComparison.Ordinal))
         {
-            foreach (var creature in Cave.Trilobites)
+            foreach (var creature in Cave.GetTrilobiteList())
             {
                 trackedCreatures.Add(creature);
                 var tile = GetTile(creature.Location.ToString());
@@ -352,32 +465,30 @@ public sealed class BfsField
                     continue;
                 }
 
-                blockedKeys.Add(tile.Key);
-                AddAdjacentPassableSeeds(tile, blockedKeys, seedKeys);
+                _blocked[tile.Id] = true;
+                AddAdjacentPassableSeeds(tile);
             }
 
-            foreach (var building in Cave.Buildings)
+            foreach (var building in Cave.GetBuildingList())
             {
                 trackedBuildings.Add(building);
                 var isAlgaeFarm = string.Equals(building.Name, "Algae Farm", StringComparison.Ordinal) ||
                                   string.Equals(building.GetType().Name, "AlgaeFarm", StringComparison.Ordinal);
-                AddBuildingTargets(building, blockedKeys, seedKeys, isAlgaeFarm);
+                AddBuildingTargets(building, isAlgaeFarm);
             }
         }
 
         SetTrackedTargets(trackedBuildings, trackedCreatures);
-        return (blockedKeys, seedKeys);
     }
 
-    private int ComputeValue(string tileKey, Dictionary<string, int> field, (HashSet<string> BlockedKeys, HashSet<string> SeedKeys) snapshot)
+    private int ComputeValue(Tile tile)
     {
-        var tile = GetTile(tileKey);
-        if (tile is null || !IsTileInCoverage(tile) || snapshot.BlockedKeys.Contains(tileKey))
+        if (!_covered[tile.Id] || _blocked[tile.Id])
         {
             return int.MaxValue;
         }
 
-        if (snapshot.SeedKeys.Contains(tileKey))
+        if (_seeded[tile.Id])
         {
             return 0;
         }
@@ -385,12 +496,12 @@ public sealed class BfsField
         var bestNeighbor = int.MaxValue;
         foreach (var neighbor in tile.Neighbors)
         {
-            if (!IsTileInCoverage(neighbor) || snapshot.BlockedKeys.Contains(neighbor.Key))
+            if (!_covered[neighbor.Id] || _blocked[neighbor.Id])
             {
                 continue;
             }
 
-            var neighborValue = field.GetValueOrDefault(neighbor.Key, int.MaxValue);
+            var neighborValue = _values[neighbor.Id];
             if (neighborValue < bestNeighbor)
             {
                 bestNeighbor = neighborValue;
@@ -400,33 +511,66 @@ public sealed class BfsField
         return bestNeighbor == int.MaxValue ? int.MaxValue : bestNeighbor + 1;
     }
 
+    private void EnqueueTile(Tile tile)
+    {
+        if (!_covered[tile.Id] || _queued[tile.Id])
+        {
+            return;
+        }
+
+        _queued[tile.Id] = true;
+        _queue.Enqueue(tile.Id);
+    }
+
+    private Dictionary<string, int> CommitCurrentField()
+    {
+        _fieldCacheDirty = true;
+        ClearUpdates();
+        return GetField(false);
+    }
+
     public Dictionary<string, int> Rebuild()
     {
-        var snapshot = BuildSnapshot();
-        var field = CreateBaseField();
-        var queue = new Queue<string>();
-
-        foreach (var seedKey in snapshot.SeedKeys)
+        if (Cave is null)
         {
-            if (snapshot.BlockedKeys.Contains(seedKey) || !field.ContainsKey(seedKey))
+            Field = new Dictionary<string, int>(StringComparer.Ordinal);
+            _fieldCacheDirty = false;
+            ClearUpdates();
+            return Field;
+        }
+
+        RefreshCoverageState(resetValues: true);
+        BuildSnapshot();
+        Array.Clear(_queued, 0, _queued.Length);
+        _queue.Clear();
+
+        foreach (var seedId in _seedIds)
+        {
+            if (!_covered[seedId] || _blocked[seedId])
             {
                 continue;
             }
 
-            field[seedKey] = 0;
-            queue.Enqueue(seedKey);
+            _values[seedId] = 0;
+            if (!_queued[seedId])
+            {
+                _queued[seedId] = true;
+                _queue.Enqueue(seedId);
+            }
         }
 
-        while (queue.Count > 0)
+        while (_queue.Count > 0)
         {
-            var currentKey = queue.Dequeue();
-            var currentTile = GetTile(currentKey);
+            var currentId = _queue.Dequeue();
+            _queued[currentId] = false;
+
+            var currentTile = Cave.GetTileById(currentId);
             if (currentTile is null)
             {
                 continue;
             }
 
-            var currentValue = field.GetValueOrDefault(currentKey, int.MaxValue);
+            var currentValue = _values[currentId];
             if (currentValue == int.MaxValue)
             {
                 continue;
@@ -434,56 +578,39 @@ public sealed class BfsField
 
             foreach (var neighbor in currentTile.Neighbors)
             {
-                if (!IsTileInCoverage(neighbor) || snapshot.BlockedKeys.Contains(neighbor.Key))
+                if (!_covered[neighbor.Id] || _blocked[neighbor.Id])
                 {
                     continue;
                 }
 
                 var nextValue = currentValue + 1;
-                if (nextValue >= field.GetValueOrDefault(neighbor.Key, int.MaxValue))
+                if (nextValue >= _values[neighbor.Id])
                 {
                     continue;
                 }
 
-                field[neighbor.Key] = nextValue;
-                queue.Enqueue(neighbor.Key);
+                _values[neighbor.Id] = nextValue;
+                EnqueueTile(neighbor);
             }
         }
 
-        return CommitField(field);
+        return CommitCurrentField();
     }
 
     public Dictionary<string, int> Rebalance(IEnumerable<string>? dirtyKeys = null)
     {
-        var dirty = dirtyKeys?.ToArray() ?? UpdatedTiles.ToArray();
-        if (Field.Count == 0 || dirty.Length == 0)
+        if (Cave is null || _coverageCount == 0)
         {
             return Rebuild();
         }
 
-        var field = SyncCoverage(new Dictionary<string, int>(Field, StringComparer.Ordinal));
-        var snapshot = BuildSnapshot();
-        var queue = new Queue<string>();
-        var queued = new HashSet<string>(StringComparer.Ordinal);
+        RefreshCoverageState(resetValues: false);
+        BuildSnapshot();
+        Array.Clear(_queued, 0, _queued.Length);
+        _queue.Clear();
 
-        void Enqueue(string tileKey)
-        {
-            if (string.IsNullOrWhiteSpace(tileKey) || queued.Contains(tileKey))
-            {
-                return;
-            }
-
-            var tile = GetTile(tileKey);
-            if (tile is null || !IsTileInCoverage(tile))
-            {
-                return;
-            }
-
-            queued.Add(tileKey);
-            queue.Enqueue(tileKey);
-        }
-
-        foreach (var dirtyKey in dirty)
+        var hasDirty = false;
+        foreach (var dirtyKey in dirtyKeys ?? UpdatedTiles)
         {
             var tile = GetTile(dirtyKey);
             if (tile is null)
@@ -491,51 +618,56 @@ public sealed class BfsField
                 continue;
             }
 
-            Enqueue(tile.Key);
+            hasDirty = true;
+            EnqueueTile(tile);
             foreach (var neighbor in tile.Neighbors)
             {
-                Enqueue(neighbor.Key);
+                EnqueueTile(neighbor);
             }
         }
 
-        while (queue.Count > 0)
+        if (!hasDirty)
         {
-            var currentKey = queue.Dequeue();
-            queued.Remove(currentKey);
+            return Rebuild();
+        }
 
-            var currentValue = field.GetValueOrDefault(currentKey, int.MaxValue);
-            var nextValue = ComputeValue(currentKey, field, snapshot);
-            if (currentValue == nextValue)
-            {
-                continue;
-            }
+        while (_queue.Count > 0)
+        {
+            var currentId = _queue.Dequeue();
+            _queued[currentId] = false;
 
-            field[currentKey] = nextValue;
-            var currentTile = GetTile(currentKey);
+            var currentTile = Cave.GetTileById(currentId);
             if (currentTile is null)
             {
                 continue;
             }
 
+            var nextValue = ComputeValue(currentTile);
+            if (_values[currentId] == nextValue)
+            {
+                continue;
+            }
+
+            _values[currentId] = nextValue;
             foreach (var neighbor in currentTile.Neighbors)
             {
-                Enqueue(neighbor.Key);
+                EnqueueTile(neighbor);
             }
         }
 
-        return CommitField(field);
+        return CommitCurrentField();
     }
 
     public Dictionary<string, int> Refresh()
     {
-        if (Field.Count == 0)
+        if (_coverageCount == 0)
         {
             return Rebuild();
         }
 
         if (IsUpdated())
         {
-            return Field;
+            return GetField(false);
         }
 
         return UpdatedTiles.Count == 0 ? Rebuild() : Rebalance();
@@ -543,31 +675,42 @@ public sealed class BfsField
 
     public int GetFieldValue(GridPoint location, bool refresh = true)
     {
-        var field = GetField(refresh);
-        return field.GetValueOrDefault(location.ToString(), int.MaxValue);
+        if (refresh)
+        {
+            Refresh();
+        }
+
+        var tile = GetTile(location.ToString());
+        return tile is null || !_covered[tile.Id]
+            ? int.MaxValue
+            : _values[tile.Id];
     }
 
     public GridPoint? GetNextStep(GridPoint location, bool refresh = true)
     {
-        var field = GetField(refresh);
+        if (refresh)
+        {
+            Refresh();
+        }
+
         var currentTile = GetTile(location.ToString());
-        if (currentTile is null)
+        if (currentTile is null || !_covered[currentTile.Id])
         {
             return null;
         }
 
-        var currentValue = field.GetValueOrDefault(location.ToString(), int.MaxValue);
+        var currentValue = _values[currentTile.Id];
         Tile? bestNeighbor = null;
         var bestValue = currentValue;
 
         foreach (var neighbor in currentTile.Neighbors)
         {
-            if (!neighbor.CreatureFits())
+            if (!neighbor.CreatureFits() || !_covered[neighbor.Id])
             {
                 continue;
             }
 
-            var neighborValue = field.GetValueOrDefault(neighbor.Key, int.MaxValue);
+            var neighborValue = _values[neighbor.Id];
             if (neighborValue == int.MaxValue || neighborValue >= bestValue)
             {
                 continue;
@@ -580,13 +723,23 @@ public sealed class BfsField
             }
         }
 
-        return bestNeighbor is null ? null : GridPoint.Parse(bestNeighbor.Key);
+        return bestNeighbor?.Coordinates;
     }
 
     public List<GridPoint>? BuildPathFrom(GridPoint startLocation, bool refresh = true)
     {
-        var field = GetField(refresh);
-        var startValue = field.GetValueOrDefault(startLocation.ToString(), int.MaxValue);
+        if (refresh)
+        {
+            Refresh();
+        }
+
+        var startTile = GetTile(startLocation.ToString());
+        if (startTile is null || !_covered[startTile.Id])
+        {
+            return null;
+        }
+
+        var startValue = _values[startTile.Id];
         if (startValue == int.MaxValue)
         {
             return null;
@@ -607,7 +760,13 @@ public sealed class BfsField
 
             path.Add(next.Value);
             current = next.Value;
-            currentValue = field.GetValueOrDefault(current.ToString(), int.MaxValue);
+            var currentTile = GetTile(current.ToString());
+            if (currentTile is null)
+            {
+                return null;
+            }
+
+            currentValue = _values[currentTile.Id];
             timeCount++;
         }
 

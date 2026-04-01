@@ -183,11 +183,12 @@ public sealed partial class MenuController
         var totalGapWidth = tabGap * Math.Max(0, tabs.Count - 1);
         var tabWidth = ((metrics.PanelWidth - (metrics.ContentPadding * 2)) - totalGapWidth) / Math.Max(1, tabs.Count);
         var tabX = metrics.PanelX + metrics.ContentPadding;
+        var tabY = metrics.PanelY + metrics.HeaderHeight - metrics.TabHeight - (int)MathF.Round(12f * metrics.LayoutScale);
 
         var result = new List<LabeledRect>(tabs.Count);
         foreach (var tab in tabs)
         {
-            result.Add(new LabeledRect(tab.Key, tab.Label, new Rectangle(tabX, 70, tabWidth, metrics.TabHeight)));
+            result.Add(new LabeledRect(tab.Key, tab.Label, new Rectangle(tabX, tabY, tabWidth, metrics.TabHeight)));
             tabX += tabWidth + tabGap;
         }
 
@@ -315,7 +316,7 @@ public sealed partial class MenuController
             (int)MathF.Round(18f * layoutScale),
             (int)MathF.Round(16f * layoutScale),
             (int)MathF.Round(42f * layoutScale),
-            (int)MathF.Round(122f * layoutScale));
+            (int)MathF.Round(140f * layoutScale));
     }
 
     private static Rectangle Inset(Rectangle bounds, int inset)

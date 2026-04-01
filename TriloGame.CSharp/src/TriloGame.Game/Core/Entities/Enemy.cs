@@ -47,16 +47,14 @@ public sealed class Enemy : Creature
         EnemyTargetTileKey = null;
     }
 
-    public List<Trilobite> GetHostileTrilobites()
+    public IReadOnlyList<Trilobite> GetHostileTrilobites()
     {
-        return Cave is null ? [] : Cave.Trilobites.ToList();
+        return Cave?.GetTrilobiteList() ?? [];
     }
 
     public Trilobite? GetHostileAtTileKey(string? tileKey)
     {
-        return string.IsNullOrWhiteSpace(tileKey)
-            ? null
-            : GetHostileTrilobites().FirstOrDefault(hostile => hostile.Location.ToString() == tileKey);
+        return Cave?.GetTrilobiteAtTileKey(tileKey);
     }
 
     public Core.Buildings.Building? GetHostileBuildingAtTileKey(string? tileKey)
@@ -92,7 +90,7 @@ public sealed class Enemy : Creature
         string? adjacentBuildingTileKey = null;
         foreach (var neighbor in currentTile.Neighbors)
         {
-            if (GetHostileAtTileKey(neighbor.Key) is not null)
+            if (neighbor.Trilobites.Count > 0)
             {
                 return neighbor.Key;
             }

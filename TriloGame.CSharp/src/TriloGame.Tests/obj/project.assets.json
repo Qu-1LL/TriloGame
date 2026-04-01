@@ -1318,11 +1318,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Tests\\TriloGame.Tests.csproj",
+      "projectUniqueName": "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Tests\\TriloGame.Tests.csproj",
       "projectName": "TriloGame.Tests",
-      "projectPath": "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Tests\\TriloGame.Tests.csproj",
+      "projectPath": "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Tests\\TriloGame.Tests.csproj",
       "packagesPath": "C:\\Users\\jeffm\\.nuget\\packages\\",
-      "outputPath": "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Tests\\obj\\",
+      "outputPath": "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Tests\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\jeffm\\AppData\\Roaming\\NuGet\\NuGet.Config"

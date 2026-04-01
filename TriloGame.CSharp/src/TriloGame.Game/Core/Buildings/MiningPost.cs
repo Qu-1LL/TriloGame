@@ -14,6 +14,7 @@ public sealed class MiningPost : Building
     private readonly Dictionary<string, List<string>> _mineableQueues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _mineableQueueHeads = new(StringComparer.Ordinal);
     private readonly List<string> _mineableTypes = [];
+    private readonly HashSet<string> _dirtyMineableTileKeys = new(StringComparer.Ordinal);
 
     public MiningPost(GameSession session)
         : base("Mining Post", new GridPoint(3, 3), [[1, 1, 1], [1, 0, 1], [1, 1, 1]], session, true)
@@ -194,25 +195,39 @@ public sealed class MiningPost : Building
     public void InvalidateMineableQueues()
     {
         MineableQueuesDirty = true;
+        _dirtyMineableTileKeys.Clear();
     }
 
     public void InvalidateMineableQueuesForKeys(IEnumerable<string> tileKeys)
     {
         foreach (var tileKey in tileKeys)
         {
-            if (IsLocationInArea(GridPoint.Parse(tileKey)))
+            if (string.IsNullOrWhiteSpace(tileKey))
             {
-                InvalidateMineableQueues();
-                return;
+                continue;
+            }
+
+            var tile = Cave?.GetTile(tileKey);
+            var location = tile?.Coordinates ?? GridPoint.Parse(tileKey);
+            if (IsLocationInArea(location))
+            {
+                MineableQueuesDirty = true;
+                _dirtyMineableTileKeys.Add(tileKey);
             }
         }
     }
 
     public void EnsureMineableQueues(World.Cave cave)
     {
-        if (!MineableQueuesReady || MineableQueuesDirty)
+        if (!MineableQueuesReady)
         {
             RebuildMineableQueues(cave);
+            return;
+        }
+
+        if (MineableQueuesDirty)
+        {
+            ApplyDirtyMineableQueueUpdates(cave);
         }
     }
 
@@ -224,8 +239,7 @@ public sealed class MiningPost : Building
 
         foreach (var tile in cave.GetTiles())
         {
-            var tileCoords = GridPoint.Parse(tile.Key);
-            var distance = GridPoint.SquaredDistance(tileCoords, center);
+            var distance = GridPoint.SquaredDistance(tile.Coordinates, center);
             if (distance > radiusSq || !Building.IsMineableType(tile.Base))
             {
                 continue;
@@ -258,6 +272,100 @@ public sealed class MiningPost : Building
 
         MineableQueuesReady = true;
         MineableQueuesDirty = false;
+        _dirtyMineableTileKeys.Clear();
+    }
+
+    private void ApplyDirtyMineableQueueUpdates(World.Cave cave)
+    {
+        if (_dirtyMineableTileKeys.Count == 0)
+        {
+            RebuildMineableQueues(cave);
+            return;
+        }
+
+        if (_dirtyMineableTileKeys.Count > 24)
+        {
+            RebuildMineableQueues(cave);
+            return;
+        }
+
+        foreach (var tileKey in _dirtyMineableTileKeys)
+        {
+            RemoveTileFromQueues(tileKey);
+
+            var tile = cave.GetTile(tileKey);
+            if (tile is null || !Building.IsMineableType(tile.Base) || !IsLocationInArea(tile.Coordinates))
+            {
+                continue;
+            }
+
+            InsertTileIntoQueue(tile.Base, tile.Key, GridPoint.SquaredDistance(tile.Coordinates, GetCenter()));
+        }
+
+        MineableQueuesDirty = false;
+        _dirtyMineableTileKeys.Clear();
+    }
+
+    private void RemoveTileFromQueues(string tileKey)
+    {
+        for (var index = _mineableTypes.Count - 1; index >= 0; index--)
+        {
+            var type = _mineableTypes[index];
+            if (!_mineableQueues.TryGetValue(type, out var queue))
+            {
+                continue;
+            }
+
+            var queueIndex = queue.IndexOf(tileKey);
+            if (queueIndex < 0)
+            {
+                continue;
+            }
+
+            var head = _mineableQueueHeads.GetValueOrDefault(type, 0);
+            queue.RemoveAt(queueIndex);
+            if (queueIndex < head)
+            {
+                _mineableQueueHeads[type] = Math.Max(0, head - 1);
+            }
+
+            if (queue.Count == 0)
+            {
+                _mineableQueues.Remove(type);
+                _mineableQueueHeads.Remove(type);
+                _mineableTypes.RemoveAt(index);
+            }
+        }
+    }
+
+    private void InsertTileIntoQueue(string type, string tileKey, int distance)
+    {
+        if (!_mineableQueues.TryGetValue(type, out var queue))
+        {
+            queue = [];
+            _mineableQueues[type] = queue;
+            _mineableQueueHeads[type] = 0;
+            _mineableTypes.Add(type);
+        }
+
+        var insertIndex = queue.Count;
+        while (insertIndex > 0)
+        {
+            var previousKey = queue[insertIndex - 1];
+            var previousTile = Cave?.GetTile(previousKey);
+            var previousDistance = previousTile is null
+                ? int.MaxValue
+                : GridPoint.SquaredDistance(previousTile.Coordinates, GetCenter());
+            if (previousDistance < distance ||
+                (previousDistance == distance && string.CompareOrdinal(previousKey, tileKey) <= 0))
+            {
+                break;
+            }
+
+            insertIndex--;
+        }
+
+        queue.Insert(insertIndex, tileKey);
     }
 
     public bool HasQueuedMineableTiles(World.Cave cave)
@@ -341,8 +449,7 @@ public sealed class MiningPost : Building
                 continue;
             }
 
-            var tileCoords = GridPoint.Parse(tileKey);
-            if (GridPoint.SquaredDistance(tileCoords, center) > radiusSq)
+            if (GridPoint.SquaredDistance(tile.Coordinates, center) > radiusSq)
             {
                 continue;
             }
@@ -377,12 +484,11 @@ public sealed class MiningPost : Building
 
     public GridPoint? GetNavigationTarget(World.Cave cave, World.Tile tile)
     {
-        var tileCoords = GridPoint.Parse(tile.Key);
         var center = GetCenter();
 
         if (!string.Equals(tile.Base, "wall", StringComparison.Ordinal))
         {
-            return tile.CreatureFits() ? tileCoords : null;
+            return tile.CreatureFits() ? tile.Coordinates : null;
         }
 
         GridPoint? bestTarget = null;
@@ -394,12 +500,11 @@ public sealed class MiningPost : Building
                 continue;
             }
 
-            var neighborCoords = GridPoint.Parse(neighbor.Key);
-            var distance = GridPoint.SquaredDistance(neighborCoords, center);
+            var distance = GridPoint.SquaredDistance(neighbor.Coordinates, center);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                bestTarget = neighborCoords;
+                bestTarget = neighbor.Coordinates;
             }
         }
 
@@ -418,12 +523,11 @@ public sealed class MiningPost : Building
                 continue;
             }
 
-            var tileCoords = GridPoint.Parse(tile.Key);
-            var distance = GridPoint.SquaredDistance(tileCoords, startLocation);
+            var distance = GridPoint.SquaredDistance(tile.Coordinates, startLocation);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                bestTile = tileCoords;
+                bestTile = tile.Coordinates;
             }
         }
 

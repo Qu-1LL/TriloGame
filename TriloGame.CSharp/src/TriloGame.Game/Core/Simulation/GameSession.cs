@@ -30,6 +30,7 @@ public sealed class GameSession
         Danger = false;
         TickCount = 0;
         DebugEnemyCount = 1;
+        TickProfiler = new TickProfiler();
     }
 
     public GameEventBus EventBus { get; }
@@ -49,6 +50,8 @@ public sealed class GameSession
     public int TickCount { get; set; }
 
     public int DebugEnemyCount { get; set; }
+
+    public TickProfiler TickProfiler { get; }
 
     public event Action<GameAudioCue>? AudioCueRequested;
 

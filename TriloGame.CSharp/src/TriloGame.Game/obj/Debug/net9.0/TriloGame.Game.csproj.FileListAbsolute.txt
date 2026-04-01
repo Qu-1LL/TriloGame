@@ -69,3 +69,4 @@ d:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\bin\Deb
 d:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\bin\Debug\net9.0\Content\Audio\TrilobiteSelected.xnb
 d:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\bin\Debug\net9.0\Content\Audio\UiSelect.xnb
 d:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\bin\Debug\net9.0\Content\Audio\VolumeSound.xnb
+d:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\bin\Debug\net9.0\Content\Audio\BuildingPlace.xnb

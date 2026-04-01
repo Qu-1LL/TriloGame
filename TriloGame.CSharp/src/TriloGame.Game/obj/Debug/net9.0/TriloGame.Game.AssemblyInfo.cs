@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TriloGame.Game")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5cd79495d5ec65b1c01f23335ec2c234427ad837")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c50bc6d6caebb00c21c61d86ca84cd03af93ae14")]
 [assembly: System.Reflection.AssemblyProductAttribute("TriloGame.Game")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TriloGame.Game")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -5,18 +5,26 @@ public sealed class Tile
     private readonly HashSet<Tile> _adjacent = [];
     private readonly List<Entities.Trilobite> _trilobites = [];
 
-    public Tile(string key)
+    public Tile(int id, string key)
     {
+        Id = id;
         Key = key;
+        Coordinates = Shared.Math.GridPoint.Parse(key);
         Base = "empty";
         CreatureCanFit = true;
     }
 
+    public int Id { get; }
+
     public string Key { get; }
+
+    public Shared.Math.GridPoint Coordinates { get; }
 
     public string Base { get; private set; }
 
     public Buildings.Building? Built { get; private set; }
+
+    public Entities.Enemy? EnemyOccupant { get; private set; }
 
     public bool CreatureCanFit { get; set; }
 
@@ -71,6 +79,11 @@ public sealed class Tile
     public bool RemoveTrilobite(Entities.Trilobite trilobite)
     {
         return _trilobites.Remove(trilobite);
+    }
+
+    public void SetEnemyOccupant(Entities.Enemy? enemy)
+    {
+        EnemyOccupant = enemy;
     }
 
     public Tile? GetRandomNeighbor()

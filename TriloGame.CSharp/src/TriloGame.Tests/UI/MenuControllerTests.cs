@@ -20,7 +20,10 @@ public sealed class MenuControllerTests
         menu.OpenPanel();
 
         var viewport = new Point(1440, 900);
-        var framePaddingPoint = new Point(960, 408);
+        var getLayout = typeof(MenuController).GetMethod("GetLayout", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var layout = getLayout!.Invoke(menu, [viewport, session]);
+        var buildGridFrameBounds = (Rectangle)layout!.GetType().GetProperty("BuildGridFrameBounds")!.GetValue(layout)!;
+        var framePaddingPoint = new Point(buildGridFrameBounds.X + 8, buildGridFrameBounds.Y + 8);
 
         var handled = menu.HandleWheel(framePaddingPoint, 90, viewport, session);
 
@@ -64,6 +67,18 @@ public sealed class MenuControllerTests
         var gearHandled = menu.HandleClick(new Point(1402, 37), viewport, null!, session);
 
         Assert.True(gearHandled);
+        Assert.True(menu.PanelOpen);
+    }
+
+    [Fact]
+    public void TogglePanel_FlipsOpenState()
+    {
+        var menu = new MenuController();
+
+        menu.TogglePanel();
+        Assert.False(menu.PanelOpen);
+
+        menu.TogglePanel();
         Assert.True(menu.PanelOpen);
     }
 }

@@ -24,4 +24,40 @@ public sealed class MiningPostTests
         Assert.Equal(10, withdrawn.Amount);
         Assert.Equal(5, post.GetInventory()["Sandstone"]);
     }
+
+    [Fact]
+    public void FullQueueInvalidation_RebuildsMineableQueuesAfterTheyWereExhausted()
+    {
+        var (session, cave, _) = TestWorldFactory.CreateSessionWithQueen();
+        var post = new MiningPost(session);
+        var postLocation = TestWorldFactory.FindBuildLocation(cave, post, preserveReachability: true);
+        Assert.True(cave.Build(post, postLocation));
+
+        var reservedBy = new List<Trilobite>();
+        while (true)
+        {
+            var creature = new Trilobite($"Miner {reservedBy.Count}", GridPoint.Zero, session);
+            var tile = post.GrabMineableTile(cave, creature);
+            if (tile is null)
+            {
+                break;
+            }
+
+            reservedBy.Add(creature);
+        }
+
+        Assert.NotEmpty(reservedBy);
+        Assert.False(post.HasQueuedMineableTiles(cave));
+
+        foreach (var creature in reservedBy)
+        {
+            post.RemoveAssignment(creature);
+        }
+
+        post.InvalidateMineableQueues();
+
+        var recoveredTile = post.GrabMineableTile(cave, new Trilobite("Replacement Miner", GridPoint.Zero, session));
+
+        Assert.NotNull(recoveredTile);
+    }
 }

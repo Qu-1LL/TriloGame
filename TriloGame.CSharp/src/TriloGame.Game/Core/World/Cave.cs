@@ -18,6 +18,15 @@ public sealed partial class Cave : Graph
     private const int Radius = 20;
     private const int OreMult = 300;
     private const int OreDist = 8;
+    private readonly List<Trilobite> _trilobiteList = [];
+    private readonly List<Enemy> _enemyList = [];
+    private readonly List<Building> _buildingList = [];
+    private readonly List<MiningPost> _miningPosts = [];
+    private readonly List<AlgaeFarm> _algaeFarms = [];
+    private readonly List<Barracks> _barracks = [];
+    private readonly List<Scaffolding> _scaffolds = [];
+    private readonly Dictionary<string, Enemy> _enemyOccupancy = new(StringComparer.Ordinal);
+    private Queen? _queenBuilding;
 
     public Cave(GameSession session)
     {
@@ -43,6 +52,20 @@ public sealed partial class Cave : Graph
     public HashSet<Tile> RevealedTiles { get; private set; }
 
     public HashSet<Tile> ReachableTiles { get; private set; }
+
+    public IReadOnlyList<Trilobite> GetTrilobiteList() => _trilobiteList;
+
+    public IReadOnlyList<Enemy> GetEnemyList() => _enemyList;
+
+    public IReadOnlyList<Building> GetBuildingList() => _buildingList;
+
+    public IReadOnlyList<MiningPost> GetMiningPosts() => _miningPosts;
+
+    public IReadOnlyList<AlgaeFarm> GetAlgaeFarms() => _algaeFarms;
+
+    public IReadOnlyList<Barracks> GetBarracksList() => _barracks;
+
+    public IReadOnlyList<Scaffolding> GetScaffoldingList() => _scaffolds;
 
     private void GenerateCaveShrink()
     {
@@ -248,6 +271,50 @@ public sealed partial class Cave : Graph
         }
     }
 
+    private void RegisterBuilding(Building building)
+    {
+        switch (building)
+        {
+            case Queen queen:
+                _queenBuilding = queen;
+                break;
+            case MiningPost post:
+                _miningPosts.Add(post);
+                break;
+            case AlgaeFarm farm:
+                _algaeFarms.Add(farm);
+                break;
+            case Barracks barracks:
+                _barracks.Add(barracks);
+                break;
+            case Scaffolding scaffolding:
+                _scaffolds.Add(scaffolding);
+                break;
+        }
+    }
+
+    private void UnregisterBuilding(Building building)
+    {
+        switch (building)
+        {
+            case Queen queen when ReferenceEquals(_queenBuilding, queen):
+                _queenBuilding = null;
+                break;
+            case MiningPost post:
+                _miningPosts.Remove(post);
+                break;
+            case AlgaeFarm farm:
+                _algaeFarms.Remove(farm);
+                break;
+            case Barracks barracks:
+                _barracks.Remove(barracks);
+                break;
+            case Scaffolding scaffolding:
+                _scaffolds.Remove(scaffolding);
+                break;
+        }
+    }
+
     public bool CanBuild(Building building, GridPoint location, bool preserveReachability = false)
     {
         var hasQueen = GetQueenBuilding() is not null;
@@ -407,6 +474,7 @@ public sealed partial class Cave : Graph
         }
 
         Buildings.Add(building);
+        _buildingList.Add(building);
         building.Cave = this;
         building.BfsField.SetCave(this);
         building.BfsField.SetOwnerBuilding(building);
@@ -430,6 +498,7 @@ public sealed partial class Cave : Graph
         }
 
         building.OnBuilt(this);
+        RegisterBuilding(building);
 
         var dirtyKeys = building.TileArray.Select(tile => tile.Key).ToArray();
         var reachability = RefreshReachableTiles();
@@ -444,6 +513,9 @@ public sealed partial class Cave : Graph
         {
             return false;
         }
+
+        _buildingList.Remove(building);
+        UnregisterBuilding(building);
 
         var dirtyKeys = new List<string>();
         foreach (var tile in building.TileArray)
@@ -511,16 +583,16 @@ public sealed partial class Cave : Graph
 
     public Queen? GetQueenBuilding()
     {
-        return Buildings.OfType<Queen>().FirstOrDefault();
+        return _queenBuilding;
     }
 
     public bool IsTileRevealed(Tile tile) => RevealedTiles.Contains(tile);
 
-    public IReadOnlyList<Tile> GetRevealedTiles() => RevealedTiles.ToArray();
+    public IReadOnlyCollection<Tile> GetRevealedTiles() => RevealedTiles;
 
     public bool IsTileReachable(Tile tile) => ReachableTiles.Contains(tile);
 
-    public IReadOnlyList<Tile> GetReachableTiles() => ReachableTiles.ToArray();
+    public IReadOnlyCollection<Tile> GetReachableTiles() => ReachableTiles;
 
     public IReadOnlyList<string> GetReachabilityChangedKeys(HashSet<Tile> previousReachableTiles, HashSet<Tile> nextReachableTiles)
     {
@@ -608,7 +680,7 @@ public sealed partial class Cave
 
     public bool MarkAllBuildingFieldsDirty(IEnumerable<string>? tileKeys = null, IEnumerable<Building>? dirtyBuildings = null, IEnumerable<Creature>? dirtyCreatures = null)
     {
-        foreach (var building in Buildings)
+        foreach (var building in _buildingList)
         {
             var fieldObject = GetBuildingBfsFieldObject(building);
             fieldObject.MarkDirty(tileKeys, dirtyBuildings, dirtyCreatures);
@@ -879,7 +951,7 @@ public sealed partial class Cave
 
     public void NotifyMineableTilesChanged(IEnumerable<string> tileKeys)
     {
-        foreach (var building in Buildings.OfType<MiningPost>())
+        foreach (var building in _miningPosts)
         {
             building.InvalidateMineableQueuesForKeys(tileKeys);
         }
@@ -978,9 +1050,17 @@ public sealed partial class Cave
         return true;
     }
 
-    public IReadOnlyList<Creature> GetCreatures()
+    public IEnumerable<Creature> GetCreatures()
     {
-        return [.. Trilobites, .. Enemies];
+        foreach (var trilobite in _trilobiteList)
+        {
+            yield return trilobite;
+        }
+
+        foreach (var enemy in _enemyList)
+        {
+            yield return enemy;
+        }
     }
 
     private bool HasEnemies() => Enemies.Count > 0;
@@ -999,13 +1079,30 @@ public sealed partial class Cave
 
     public bool SyncTrilobiteTileOccupancy(Creature creature, Tile? fromTile = null, Tile? toTile = null)
     {
-        if (creature is not Trilobite trilobite)
+        if (creature is Trilobite trilobite)
+        {
+            fromTile?.RemoveTrilobite(trilobite);
+            toTile?.AddTrilobite(trilobite);
+            return true;
+        }
+
+        if (creature is not Enemy enemy)
         {
             return false;
         }
 
-        fromTile?.RemoveTrilobite(trilobite);
-        toTile?.AddTrilobite(trilobite);
+        if (fromTile is not null && ReferenceEquals(fromTile.EnemyOccupant, enemy))
+        {
+            fromTile.SetEnemyOccupant(null);
+            _enemyOccupancy.Remove(fromTile.Key);
+        }
+
+        if (toTile is not null)
+        {
+            toTile.SetEnemyOccupant(enemy);
+            _enemyOccupancy[toTile.Key] = enemy;
+        }
+
         return true;
     }
 
@@ -1019,15 +1116,21 @@ public sealed partial class Cave
             {
                 return false;
             }
+
+            _enemyList.Remove((Enemy)creature);
         }
         else if (!Trilobites.Remove((Trilobite)creature))
         {
             return false;
         }
+        else
+        {
+            _trilobiteList.Remove((Trilobite)creature);
+        }
 
         creature.ClearActionQueue();
         creature.CleanupBeforeRemoval(source);
-        foreach (var building in Buildings)
+        foreach (var building in _buildingList)
         {
             switch (building)
             {
@@ -1080,11 +1183,14 @@ public sealed partial class Cave
         if (creature is Enemy enemy)
         {
             Enemies.Add(enemy);
+            _enemyList.Add(enemy);
             Session.Danger = true;
         }
         else
         {
-            Trilobites.Add((Trilobite)creature);
+            var trilobite = (Trilobite)creature;
+            Trilobites.Add(trilobite);
+            _trilobiteList.Add(trilobite);
         }
 
         MarkCreatureBfsFieldsDirty(creature, [tile.Key]);
@@ -1126,6 +1232,23 @@ public sealed partial class Cave
     }
 
     public IReadOnlyList<string> GetCoords() => Tiles.Keys.ToArray();
+
+    public Trilobite? GetTrilobiteAtTileKey(string? tileKey)
+    {
+        if (string.IsNullOrWhiteSpace(tileKey))
+        {
+            return null;
+        }
+
+        return GetTile(tileKey)?.Trilobites.FirstOrDefault();
+    }
+
+    public Enemy? GetEnemyAtTileKey(string? tileKey)
+    {
+        return string.IsNullOrWhiteSpace(tileKey)
+            ? null
+            : _enemyOccupancy.GetValueOrDefault(tileKey);
+    }
 
     private static bool IsInCircle(int x, int y, int cx, int cy, int radius)
     {

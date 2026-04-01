@@ -1,0 +1,77 @@
+TriloGame Crash Report
+=====================
+TimestampUtc: 2026-03-31T16:30:12.1388156Z
+Source: Program.Main
+IsTerminating: False
+ProcessId: 4812
+ThreadId: 2
+OS: Microsoft Windows NT 10.0.19045.0
+Framework: 9.0.13
+BaseDirectory: D:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\bin\Debug\net9.0\
+CurrentDirectory: D:\Jeff's Stuff\Trilobites
+
+Exception
+---------
+System.InvalidOperationException: Sequence contains more than one element
+   at System.Linq.ThrowHelper.ThrowMoreThanOneElementException()
+   at System.Linq.Enumerable.TryGetSingle[TSource](IEnumerable`1 source, Boolean& found)
+   at System.Linq.Enumerable.SingleOrDefault[TSource](IEnumerable`1 source)
+   at TriloGame.Game.GameApp.BuildRoleRadialButtons(RoleRadialMenuState radialMenu) in D:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\GameApp.cs:line 1520
+   at TriloGame.Game.GameApp.DrawRoleRadialMenu() in D:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\GameApp.cs:line 1248
+   at TriloGame.Game.GameApp.Draw(GameTime gameTime) in D:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\GameApp.cs:line 364
+   at Microsoft.Xna.Framework.Game.DoDraw(GameTime gameTime)
+   at Microsoft.Xna.Framework.Game.Tick()
+   at Microsoft.Xna.Framework.SdlGamePlatform.RunLoop()
+   at Microsoft.Xna.Framework.Game.Run(GameRunBehavior runBehavior)
+   at Program.<Main>$(String[] args) in D:\Jeff's Stuff\Trilobites\TriloGame\TriloGame.CSharp\src\TriloGame.Game\Program.cs:line 11
+
+Game Snapshot
+-------------
+[Game]
+Paused: True
+GameOver: False
+DebugMenuOpen: False
+SettingsMenuOpen: False
+BuildMode: False
+TickSpeedMs: 250
+TickAccumulatorMs: 83.435
+ActiveBfsDebugField: none
+Viewport: 1440x900
+CameraOrigin: -705.778, -689.778
+CameraScale: 0.563
+CameraViewCenter: 720, 450
+
+[Input]
+MousePoint: 588, 597
+MouseDelta: 0, 0
+Dragging: False
+DragStart: 588, 597
+LeftPanActive: False
+SelectionDragActive: False
+KeysHeld: none
+
+[UI]
+MenuPanelOpen: True
+MenuActiveTab: buildings
+MenuAssignmentFilter: miner
+SelectedObject: none
+SelectedTrilobites: Jeffery:miner@-17,-2 HP 20/20; Quinton:miner@-15,-1 HP 20/20; Yeetmuncher:miner@-13,-3 HP 20/20; Sigma:fighter@-16,-8 HP 20/20
+FloatingBuilding: none
+RoleRadialMenu: open @ 588, 597 targets [Jeffery, Quinton, Yeetmuncher, Sigma]
+SelectionBox: none
+
+[Session]
+TickCount: 203
+Danger: False
+DebugEnemyCount: 1
+Resources: algae=0, cochinium=0, ilmenite=0, magnetite=0, malachite=0, perotene=0, sandstone=0
+RevealedTiles: 974
+ReachableTiles: 830
+Trilobites: 4
+Enemies: 0
+Buildings: 2
+Queen: -9,-3 HP 100/100
+BuildingSummary: Queen@-9,-3 HP 100/100; Mining Post@-12,-3 HP 100/100
+TrilobiteSummary: Jeffery:miner@-17,-2 HP 20/20; Quinton:miner@-15,-1 HP 20/20; Yeetmuncher:miner@-13,-3 HP 20/20; Sigma:fighter@-16,-8 HP 20/20
+EnemySummary: none
+

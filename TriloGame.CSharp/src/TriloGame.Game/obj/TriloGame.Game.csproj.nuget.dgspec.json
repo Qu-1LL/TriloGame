@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj": {}
+    "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj": {}
   },
   "projects": {
-    "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj": {
+    "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj",
+        "projectUniqueName": "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj",
         "projectName": "TriloGame.Game",
-        "projectPath": "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj",
+        "projectPath": "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\TriloGame.Game.csproj",
         "packagesPath": "C:\\Users\\jeffm\\.nuget\\packages\\",
-        "outputPath": "d:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\obj\\",
+        "outputPath": "D:\\Jeff's Stuff\\Trilobites\\TriloGame\\TriloGame.CSharp\\src\\TriloGame.Game\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\jeffm\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -70,10 +70,6 @@
               "version": "[9.0.14, 9.0.14]"
             },
             {
-              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-              "version": "[9.0.14, 9.0.14]"
-            },
-            {
               "name": "Microsoft.NETCore.App.Host.win-x64",
               "version": "[9.0.14, 9.0.14]"
             },
@@ -82,15 +78,7 @@
               "version": "[9.0.14, 9.0.14]"
             },
             {
-              "name": "Microsoft.NETCore.App.Runtime.win-x64",
-              "version": "[9.0.14, 9.0.14]"
-            },
-            {
               "name": "Microsoft.WindowsDesktop.App.Ref",
-              "version": "[9.0.14, 9.0.14]"
-            },
-            {
-              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
               "version": "[9.0.14, 9.0.14]"
             }
           ],
@@ -100,11 +88,6 @@
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.201/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "win-x64": {
-          "#import": []
         }
       }
     }

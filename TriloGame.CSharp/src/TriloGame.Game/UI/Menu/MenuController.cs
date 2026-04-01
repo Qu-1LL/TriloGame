@@ -56,6 +56,17 @@ public sealed partial class MenuController
         PanelOpen = false;
     }
 
+    public void TogglePanel()
+    {
+        if (PanelOpen)
+        {
+            ClosePanel();
+            return;
+        }
+
+        OpenPanel();
+    }
+
     public void ResetState()
     {
         SelectedObject = null;

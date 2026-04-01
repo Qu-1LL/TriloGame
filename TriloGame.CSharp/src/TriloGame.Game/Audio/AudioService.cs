@@ -39,7 +39,7 @@ public sealed class AudioService
             return false;
         }
 
-        effect.Play(NormalizedVolume, 0f, 0f);
+        effect.Play(NormalizedVolume, ClickPitchVariation.GetRandomPitch(cue), 0f);
         return true;
     }
 }
