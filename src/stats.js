@@ -9,6 +9,7 @@ export class Stats {
 
         this.listen('tileMined')
         this.listen('wallMined')
+        this.listen('trilobiteSpawned')
 
         for (const ore of Ore.getOres()) {
             this.listen(`${ore.name}Mined`)
@@ -18,7 +19,8 @@ export class Stats {
     createDefaultValues() {
         const values = {
             tileMined: 0,
-            wallMined: 0
+            wallMined: 0,
+            trilobiteSpawned: 0
         }
 
         for (const ore of Ore.getOres()) {

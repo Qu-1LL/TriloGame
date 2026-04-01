@@ -24,6 +24,7 @@ export class Menu {
         this.assignmentActiveScroll = 0
         this.assignmentUnassignedScroll = 0
         this.scrollAreas = []
+        this.unsubscribe = []
 
         this.root = new PIXI.Container()
         this.root.sortableChildren = true
@@ -90,6 +91,16 @@ export class Menu {
                 fill: '#95b7c6'
             })
         }
+
+        this.unsubscribe.push(
+            this.game.on('trilobiteSpawned', ({ assignment } = {}) => {
+                if ((assignment ?? 'unassigned') !== 'unassigned') {
+                    return
+                }
+
+                this.refresh()
+            })
+        )
 
         this.refresh()
     }
@@ -1376,6 +1387,21 @@ export class Menu {
             scrollbarX,
             scrollKey
         })
+    }
+
+    destroy() {
+        for (const unsubscribe of this.unsubscribe) {
+            if (typeof unsubscribe === 'function') {
+                unsubscribe()
+            }
+        }
+        this.unsubscribe = []
+        this.clearContainer(this.root)
+        if (this.root.parent) {
+            this.root.parent.removeChild(this.root)
+        }
+        this.root.destroy({ children: true })
+        return true
     }
 
     renderAssignmentsTab(panel, bounds) {

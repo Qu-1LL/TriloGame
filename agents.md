@@ -406,6 +406,10 @@ This document reflects the currently implemented gameplay and UI behavior in the
 ## Implemented Events And Input Behavior
 
 ### Game runtime events (`Game.emit`)
+- `trilobiteSpawned`:
+1. Emitted from `Cave.spawn` after a non-enemy creature is successfully added to `cave.trilobites`, given its spawn location, and attached to the cave/game sprite state.
+2. Fires for successful starter trilobite spawns and queen broodling spawns.
+3. Payload includes the spawned `creature`, its `cave`, `tileKey`, `location`, and current `assignment`.
 - `tileMined`:
 1. Emitted from the shared mining path in `Game.emitMineEvents`.
 2. Fires once whenever a mineable tile is successfully converted to `empty` through `Game.mineTile`.
@@ -436,7 +440,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 1. Emitted from `Game.emitMineEvents`.
 2. Fires alongside `tileMined` when a `Cochinium` tile is mined into `empty`.
 - Stats linkage:
-1. `Stats` subscribes to `tileMined`, `wallMined`, and every `<OreName>Mined` event on `Game`.
+1. `Stats` subscribes to `trilobiteSpawned`, `tileMined`, `wallMined`, and every `<OreName>Mined` event on `Game`.
 2. Each event increments the stat with the same key name.
 
 ### Global window events (`main.js`)
@@ -524,6 +528,7 @@ This document reflects the currently implemented gameplay and UI behavior in the
 6. Clicking an entry in the upper box moves one trilobite from the selected assignment back to `unassigned`.
 7. Clicking an entry in the lower box moves one trilobite from `unassigned` into the currently selected assignment.
 8. Each transfer immediately updates the creature's actual runtime assignment and requeues its corresponding behavior.
+9. The tab refreshes in real time when an unassigned trilobite is spawned via the `trilobiteSpawned` event, so the lower-box count updates without waiting for another menu action.
 - `Selected` tab:
 1. Only appears while `Menu.selectedObject` is not `null`.
 2. Shows the selected trilobite or building name plus a delete button.
