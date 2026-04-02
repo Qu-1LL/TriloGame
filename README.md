@@ -2,6 +2,8 @@ This game is an implementation of a game idea I've had for a while. If you are r
 
 The game is deployed to github pages here: https://qu-1ll.github.io/TriloGame/ Feel free to click around!
 
+The game has a new repo due to major changes to the project. Access it here: https://github.com/Qu-1LL/The-Scuttlers
+
 You can read the design and road map below, or check out the latest release notes for more information!
 
 # Game Mechanics and Design Plans
